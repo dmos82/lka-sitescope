@@ -1,6 +1,9 @@
 import type { DemographicResult } from '@lka/shared';
 
 const CENSUS_BASE = 'https://api.census.gov/data/2022/acs/acs5';
+const CENSUS_BASE_1YR = 'https://api.census.gov/data/2023/acs/acs1';
+const ACS_YEAR_5YR = '2018-2022';
+const ACS_YEAR_1YR = '2023';
 const CENSUS_API_KEY = process.env.CENSUS_API_KEY ?? '';
 
 // TIGERweb for tract/place lookup
@@ -149,6 +152,86 @@ export async function fetchTractACS(tract: TractInfo): Promise<ACSVariables | nu
 }
 
 /**
+ * Fetch ACS 1-Year median household income for a census tract.
+ * Returns null if the area is too small (<65k pop) — 1-Year data won't exist.
+ */
+async function fetchTractACS1Yr(tract: TractInfo): Promise<number | null> {
+  const cacheKey = `acs1yr:${tract.geoid}`;
+  const cached = getCached<number | null>(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const url =
+      `${CENSUS_BASE_1YR}?get=NAME,B19013_001E,B01003_001E` +
+      `&for=tract:${tract.tract}&in=state:${tract.state}+county:${tract.county}` +
+      (CENSUS_API_KEY ? `&key=${CENSUS_API_KEY}` : '');
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) {
+      // 404 / 204 expected for small areas — not an error
+      setCache(cacheKey, null, 90 * 24 * 60 * 60 * 1000);
+      return null;
+    }
+
+    const rows = await res.json() as string[][];
+    if (rows.length < 2) {
+      setCache(cacheKey, null, 90 * 24 * 60 * 60 * 1000);
+      return null;
+    }
+
+    const headers = rows[0];
+    const values = rows[1];
+    const idx = headers.indexOf('B19013_001E');
+    const income = idx >= 0 ? parseFloat(values[idx]) : NaN;
+    const result = isNaN(income) || income <= 0 ? null : income;
+    setCache(cacheKey, result, 90 * 24 * 60 * 60 * 1000);
+    return result;
+  } catch (_err) {
+    // Network / JSON errors — treat as unavailable
+    return null;
+  }
+}
+
+/**
+ * Fetch ACS 1-Year median household income for a Census Place.
+ * Returns null if unavailable (small population or API error).
+ */
+async function fetchPlaceACS1Yr(place: PlaceInfo): Promise<number | null> {
+  const cacheKey = `place-acs1yr:${place.geoid}`;
+  const cached = getCached<number | null>(cacheKey);
+  if (cached !== null) return cached;
+
+  try {
+    const url =
+      `${CENSUS_BASE_1YR}?get=NAME,B19013_001E` +
+      `&for=place:${place.placeId}&in=state:${place.state}` +
+      (CENSUS_API_KEY ? `&key=${CENSUS_API_KEY}` : '');
+
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) {
+      setCache(cacheKey, null, 90 * 24 * 60 * 60 * 1000);
+      return null;
+    }
+
+    const rows = await res.json() as string[][];
+    if (rows.length < 2) {
+      setCache(cacheKey, null, 90 * 24 * 60 * 60 * 1000);
+      return null;
+    }
+
+    const headers = rows[0];
+    const values = rows[1];
+    const idx = headers.indexOf('B19013_001E');
+    const income = idx >= 0 ? parseFloat(values[idx]) : NaN;
+    const result = isNaN(income) || income <= 0 ? null : income;
+    setCache(cacheKey, result, 90 * 24 * 60 * 60 * 1000);
+    return result;
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
  * Get demographic result for a point (single census tract)
  */
 export async function getDemographicsForLocation(
@@ -159,7 +242,10 @@ export async function getDemographicsForLocation(
   const tract = await findTractAtPoint(lat, lng);
   if (!tract) return null;
 
-  const acs = await fetchTractACS(tract);
+  const [acs, income1yr] = await Promise.all([
+    fetchTractACS(tract),
+    fetchTractACS1Yr(tract),
+  ]);
   if (!acs) return null;
 
   const totalHouseholds = acs.B19001_001E || 1;
@@ -179,6 +265,9 @@ export async function getDemographicsForLocation(
   return {
     tract_geoid: tract.geoid,
     median_household_income: acs.B19013_001E,
+    median_household_income_1yr: income1yr,
+    acs_year_5yr: ACS_YEAR_5YR,
+    acs_year_1yr: income1yr !== null ? ACS_YEAR_1YR : null,
     population: acs.B01003_001E,
     households: totalHouseholds,
     households_above_threshold: highIncomeHouseholds,
@@ -271,6 +360,7 @@ function buildDemographicResult(
     placeGeoid?: string;
     placeName?: string;
     incomeThreshold?: number;
+    income1yr?: number | null;
   }
 ): DemographicResult {
   const incomeThreshold = opts.incomeThreshold ?? 125000;
@@ -300,11 +390,15 @@ function buildDemographicResult(
   const under18 = data['B09001_001E'] ?? 0;
   const totalPop = data['B01003_001E'] || 1;
 
+  const income1yr = opts.income1yr ?? null;
   return {
     tract_geoid: opts.tractGeoid,
     place_geoid: opts.placeGeoid,
     place_name: opts.placeName,
     median_household_income: data['B19013_001E'] || undefined,
+    median_household_income_1yr: income1yr,
+    acs_year_5yr: ACS_YEAR_5YR,
+    acs_year_1yr: income1yr !== null ? ACS_YEAR_1YR : null,
     population: data['B01003_001E'] || undefined,
     households: totalHouseholds,
     households_above_threshold: highIncomeHouseholds || undefined,
@@ -342,12 +436,16 @@ export async function getDemographicsForPlace(
   if (cached) return cached;
 
   try {
-    const url =
-      `${CENSUS_BASE}?get=${PLACE_ACS_VARS}` +
-      `&for=place:${place.placeId}&in=state:${place.state}` +
-      (CENSUS_API_KEY ? `&key=${CENSUS_API_KEY}` : '');
+    const [res, income1yr] = await Promise.all([
+      fetch(
+        `${CENSUS_BASE}?get=${PLACE_ACS_VARS}` +
+        `&for=place:${place.placeId}&in=state:${place.state}` +
+        (CENSUS_API_KEY ? `&key=${CENSUS_API_KEY}` : ''),
+        { signal: AbortSignal.timeout(15000) }
+      ),
+      fetchPlaceACS1Yr(place),
+    ]);
 
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (!res.ok) throw new Error(`Census ACS place error: ${res.status}`);
 
     const rows = await res.json() as string[][];
@@ -365,6 +463,7 @@ export async function getDemographicsForPlace(
       placeGeoid: place.geoid,
       placeName: place.name,
       incomeThreshold,
+      income1yr,
     });
 
     setCache(cacheKey, result, 90 * 24 * 60 * 60 * 1000); // 90 days
@@ -545,6 +644,9 @@ export async function getDemographicsForRadius(
 
   return {
     median_household_income: weightedAvg('B19013_001E') || undefined,
+    median_household_income_1yr: null,
+    acs_year_5yr: ACS_YEAR_5YR,
+    acs_year_1yr: null,
     population: totalPop,
     households: totalHouseholds,
     households_above_threshold: highIncomeHouseholds,

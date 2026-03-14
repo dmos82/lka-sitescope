@@ -378,20 +378,54 @@ export default function DemographicsPage() {
         <>
           {/* Core metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card title="Median annual household income from US Census ACS 5-year estimates">
+            <Card title="Median annual household income from US Census ACS estimates">
               <CardHeader className="pb-2">
                 <CardDescription>Median Household Income</CardDescription>
                 <CardTitle className="text-3xl">
-                  {formatCurrency(data.median_household_income, currency)}
+                  {formatCurrency(
+                    data.median_household_income_1yr ?? data.median_household_income,
+                    currency
+                  )}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-2">
                 <p className="text-xs text-muted-foreground">
                   Threshold: {formatCurrency(location.income_threshold, currency)}
-                  {data.median_household_income &&
-                    data.median_household_income >= location.income_threshold && (
+                  {(data.median_household_income_1yr ?? data.median_household_income) &&
+                    (data.median_household_income_1yr ?? data.median_household_income)! >= location.income_threshold && (
                       <Badge variant="secondary" className="ml-2 text-xs">Above threshold</Badge>
                     )}
+                </p>
+                <div className="text-xs text-muted-foreground space-y-0.5 border-t pt-2">
+                  {data.median_household_income_1yr != null ? (
+                    <>
+                      <p>
+                        <span className="font-medium text-foreground">
+                          ACS 1-Year ({data.acs_year_1yr ?? '2023'}):
+                        </span>{' '}
+                        {formatCurrency(data.median_household_income_1yr, currency)}
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground">
+                          ACS 5-Year ({data.acs_year_5yr ?? '2018-2022'}):
+                        </span>{' '}
+                        {formatCurrency(data.median_household_income, currency)}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p>
+                        <span className="font-medium text-foreground">
+                          ACS 5-Year ({data.acs_year_5yr ?? '2018-2022'}):
+                        </span>{' '}
+                        {formatCurrency(data.median_household_income, currency)}
+                      </p>
+                      <p className="italic">1-Year estimate unavailable for this area</p>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Source: US Census Bureau American Community Survey
                 </p>
               </CardContent>
             </Card>

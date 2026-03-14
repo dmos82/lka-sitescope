@@ -125,6 +125,12 @@ export interface DemographicResult {
   children_3_17?: number;
   /** Percentage of total population aged 3-17 */
   pct_children_3_17?: number;
+  /** ACS 1-Year median household income (more recent, only available for places 65k+ pop) */
+  median_household_income_1yr?: number | null;
+  /** ACS 5-Year vintage label, e.g. "2018-2022" */
+  acs_year_5yr?: string;
+  /** ACS 1-Year vintage label, e.g. "2023" (null if unavailable for this area) */
+  acs_year_1yr?: string | null;
   source?: string;
   fetched_at?: string;
 }
