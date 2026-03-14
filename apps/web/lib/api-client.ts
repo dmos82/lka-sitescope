@@ -59,10 +59,14 @@ export async function apiFetch<T = unknown>(
   if (!res.ok) {
     // Auto-redirect to login on expired/invalid token
     if (res.status === 401 && typeof window !== 'undefined' && !path.includes('/auth/')) {
-      localStorage.removeItem('lka_access_token');
-      localStorage.removeItem('lka_user');
-      window.location.href = '/login';
-      throw new Error('Session expired — redirecting to login');
+      // Debounce: only redirect once (avoid multiple 401s all triggering redirect)
+      if (!(window as unknown as Record<string, boolean>).__lka_redirecting) {
+        (window as unknown as Record<string, boolean>).__lka_redirecting = true;
+        localStorage.removeItem('lka_access_token');
+        localStorage.removeItem('lka_user');
+        window.location.href = '/login';
+      }
+      throw new Error('Session expired');
     }
     const error = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error((error as { error?: string }).error ?? `API error ${res.status}`);

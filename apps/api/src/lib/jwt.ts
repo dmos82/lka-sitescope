@@ -1,7 +1,7 @@
 import { SignJWT, jwtVerify } from 'jose';
 
 const JWT_SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-me';
-const ACCESS_EXPIRY = '1h';
+const ACCESS_EXPIRY = '24h';
 const REFRESH_EXPIRY = '7d';
 
 function getSecret(): Uint8Array {
