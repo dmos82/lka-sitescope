@@ -148,6 +148,14 @@ export default function DemographicsPage() {
     }
   }, [location, token]);
 
+  // Feature 1: Auto-set level to 'place' when city boundary click mode is active
+  useEffect(() => {
+    if (!location) return;
+    if (location.mode === 'city' && demoLevel !== 'place') {
+      setDemoLevel('place');
+    }
+  }, [location?.mode]);
+
   // Auto-fetch when location changes
   useEffect(() => {
     if (location) {
@@ -242,6 +250,14 @@ export default function DemographicsPage() {
           Refresh
         </Button>
       </div>
+
+      {/* Feature 1: City boundary mode indicator */}
+      {location.mode === 'city' && (
+        <div className="flex items-center gap-2 p-3 rounded-md bg-purple-50 border border-purple-200 text-purple-800 text-sm">
+          <span className="h-2 w-2 rounded-full bg-purple-600 shrink-0" />
+          City Boundary mode active — demographics aggregated at the city/town level.
+        </div>
+      )}
 
       {/* Level selector (US only) */}
       {location.country === 'US' && (

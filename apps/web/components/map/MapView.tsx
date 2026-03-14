@@ -7,6 +7,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { apiFetch } from '@/lib/api-client';
 import { useLocation } from '@/hooks/useLocation';
 
+const LAYERS_STORAGE_KEY = 'lka_map_layers';
+
 interface LkaLocationData {
   id: string;
   name: string;
@@ -146,27 +148,44 @@ interface LayerState {
   museum: boolean;
 }
 
+// Load persisted layer toggles from localStorage (only the boolean toggles, not dynamic data)
+function loadPersistedLayers(): Partial<LayerState> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(LAYERS_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) as Partial<LayerState>;
+  } catch {
+    return {};
+  }
+}
+
 export default function MapView({ searchQuery, onLocationSelect }: MapViewProps) {
   const { token } = useAuth();
-  const { updateTradeArea: updateLocationTradeArea, updateCityName } = useLocation();
+  const { location, updateTradeArea: updateLocationTradeArea, updateCityName, updateCityGeoid, updateMode } = useLocation();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const marker = useRef<maplibregl.Marker | null>(null);
   const poiMarkers = useRef<Map<string, maplibregl.Marker[]>>(new Map());
   const [isReady, setIsReady] = useState(false);
-  const [layers, setLayers] = useState<LayerState>({
-    lkaLocations: true,
-    territories: true,
-    tradeArea: true,
-    isochrones: false,
-    cityBoundary: false,
-    countyBoundary: false,
-    school: false,
-    library: false,
-    community_center: false,
-    grocery: false,
-    art_gallery: false,
-    museum: false,
+
+  // Merge persisted layer toggles with defaults on mount
+  const [layers, setLayers] = useState<LayerState>(() => {
+    const persisted = loadPersistedLayers();
+    return {
+      lkaLocations: persisted.lkaLocations ?? true,
+      territories: persisted.territories ?? true,
+      tradeArea: persisted.tradeArea ?? true,
+      isochrones: persisted.isochrones ?? false,
+      cityBoundary: persisted.cityBoundary ?? false,
+      countyBoundary: persisted.countyBoundary ?? false,
+      school: persisted.school ?? false,
+      library: persisted.library ?? false,
+      community_center: persisted.community_center ?? false,
+      grocery: persisted.grocery ?? false,
+      art_gallery: persisted.art_gallery ?? false,
+      museum: persisted.museum ?? false,
+    };
   });
   const [isochroneLoading, setIsochroneLoading] = useState(false);
   const [boundaryLoading, setBoundaryLoading] = useState(false);
@@ -177,6 +196,20 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
   const tradeAreaMilesRef = useRef(5);
   const [radiusSlider, setRadiusSlider] = useState(5);
   const fetchBoundariesRef = useRef<((lat: number, lng: number) => void) | null>(null);
+  // Track whether the location has been restored on mount (Feature 3)
+  const locationRestoredRef = useRef(false);
+
+  // Feature 3: Restore marker from location context when map becomes ready
+  useEffect(() => {
+    if (!isReady || !location || locationRestoredRef.current) return;
+    locationRestoredRef.current = true;
+    const { lat, lng, trade_area_miles } = location;
+    tradeAreaMilesRef.current = trade_area_miles;
+    setRadiusSlider(trade_area_miles);
+    placeMarker(lat, lng);
+    setSelectedMarkerPos({ lat, lng });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady]);
 
   // Fetch LKA locations
   useEffect(() => {
@@ -357,7 +390,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       setIsReady(true);
     });
 
-    // Click to place marker
+    // Click to place marker (city boundary mode handled via cityBoundaryModeRef)
     map.current.on('click', (e) => {
       const features = map.current?.queryRenderedFeatures(e.point, { layers: ['lka-locations-circle'] });
       if (features && features.length > 0) return;
@@ -367,6 +400,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       setSelectedMarkerPos({ lat, lng });
       onLocationSelect?.(lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
       // Auto-fetch boundaries on click so city name is always detected
+      // fetchBoundariesRef handles both normal and city-boundary-click-mode
       fetchBoundariesRef.current?.(lat, lng);
     });
 
@@ -406,6 +440,8 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
   }
 
   // ── Fetch boundaries when location selected ────────────────────────────────
+  // cityBoundaryActiveRef: tracks current layers.cityBoundary value inside the stable fetchBoundaries callback
+  const cityBoundaryActiveRef = useRef(false);
 
   const fetchBoundaries = useCallback(async (lat: number, lng: number) => {
     if (!token || !map.current) return;
@@ -430,17 +466,38 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       if (result.place?.properties.name) {
         updateCityName(result.place.properties.name);
       }
+
+      // Feature 1: City boundary click mode
+      // If city boundary layer is active, also force the city boundary layer visible
+      // and set mode='city' + city_geoid in location context
+      if (cityBoundaryActiveRef.current) {
+        if (map.current?.getLayer('city-boundary-fill')) {
+          map.current.setLayoutProperty('city-boundary-fill', 'visibility', 'visible');
+          map.current.setLayoutProperty('city-boundary-line', 'visibility', 'visible');
+        }
+        if (result.place?.properties.geoid) {
+          updateCityGeoid(result.place.properties.geoid);
+        }
+        updateMode('city');
+      } else {
+        updateMode('radius');
+      }
     } catch (err) {
       console.error('[MapView] Boundary fetch error:', err);
     } finally {
       setBoundaryLoading(false);
     }
-  }, [token, updateCityName]);
+  }, [token, updateCityName, updateCityGeoid, updateMode]);
 
   // Keep ref in sync with latest callback so map click handler can call it
   useEffect(() => {
     fetchBoundariesRef.current = fetchBoundaries;
   }, [fetchBoundaries]);
+
+  // Keep cityBoundaryActiveRef in sync with layers state
+  useEffect(() => {
+    cityBoundaryActiveRef.current = layers.cityBoundary;
+  }, [layers.cityBoundary]);
 
   // ── Fetch POIs for a category ──────────────────────────────────────────────
 
@@ -552,6 +609,15 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       terrSource.setData({ type: 'FeatureCollection', features: territoryFeatures });
     }
   }, [lkaLocations, isReady]);
+
+  // Persist layer toggles to localStorage whenever they change (Feature 3)
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LAYERS_STORAGE_KEY, JSON.stringify(layers));
+    } catch {
+      // localStorage unavailable
+    }
+  }, [layers]);
 
   // Toggle layer visibility (map GL layers)
   useEffect(() => {
@@ -694,24 +760,22 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
           </label>
         ))}
 
-        {/* Trade area radius slider */}
-        {layers.tradeArea && (
-          <div className="pl-5 space-y-1">
-            <p className="text-xs text-muted-foreground">
-              Radius: <span className="font-medium text-foreground">{radiusSlider} mi</span>
-            </p>
-            <input
-              type="range"
-              min={1}
-              max={25}
-              step={1}
-              value={radiusSlider}
-              onChange={(e) => handleRadiusSliderChange(Number(e.target.value))}
-              className="w-full accent-primary h-1"
-              style={{ width: '140px' }}
-            />
-          </div>
-        )}
+        {/* Trade area radius slider — always visible (Feature 4) */}
+        <div className="pl-2 space-y-1 pt-1">
+          <p className="text-xs text-muted-foreground">
+            Trade Area: <span className="font-medium text-foreground">{radiusSlider} mi</span>
+          </p>
+          <input
+            type="range"
+            min={1}
+            max={25}
+            step={1}
+            value={radiusSlider}
+            onChange={(e) => handleRadiusSliderChange(Number(e.target.value))}
+            className="w-full accent-primary h-1"
+            style={{ width: '140px' }}
+          />
+        </div>
 
         {/* Boundary layers */}
         <div className="pt-1.5 mt-1 border-t">

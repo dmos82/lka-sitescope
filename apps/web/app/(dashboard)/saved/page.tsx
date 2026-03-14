@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Trash2, Share2, MapPin, Star, RefreshCw, AlertCircle, Copy, Check } from 'lucide-react';
+import { BookOpen, Trash2, Share2, MapPin, RefreshCw, AlertCircle, Check, FileSpreadsheet, FileText, Presentation } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { apiFetch } from '@/lib/api-client';
 
@@ -42,6 +42,7 @@ export default function SavedPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [shareInfo, setShareInfo] = useState<Record<string, ShareInfo>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
 
   const fetchAnalyses = useCallback(async () => {
     if (!token) return;
@@ -95,6 +96,40 @@ export default function SavedPage() {
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     });
+  }
+
+  async function handleExport(id: string, format: 'excel' | 'pdf' | 'pptx') {
+    if (!token) return;
+    setExportingId(`${id}-${format}`);
+    try {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4100';
+      const res = await fetch(`${API_URL}/api/export/${format}/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        setError(`Export failed: ${res.statusText}`);
+        return;
+      }
+      const contentDisposition = res.headers.get('Content-Disposition') ?? '';
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const defaultExtMap: Record<string, string> = { excel: 'xlsx', pdf: 'html', pptx: 'pptx' };
+      const filename = filenameMatch?.[1] ?? `lka-analysis-${id.slice(0, 8)}.${defaultExtMap[format]}`;
+
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setExportingId(null);
+    }
   }
 
   return (
@@ -161,13 +196,42 @@ export default function SavedPage() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
                     {analysis.score !== null && (
                       <div className={`px-3 py-1.5 rounded-md text-center ${gradeColor(analysis.letter_grade)}`}>
                         <div className="text-xl font-bold">{analysis.score}</div>
                         <div className="text-xs font-medium">{analysis.letter_grade}</div>
                       </div>
                     )}
+
+                    {/* Export buttons */}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleExport(analysis.id, 'excel')}
+                      disabled={exportingId === `${analysis.id}-excel`}
+                      title="Download Excel (.xlsx)"
+                    >
+                      <FileSpreadsheet className="h-4 w-4 text-green-700" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleExport(analysis.id, 'pdf')}
+                      disabled={exportingId === `${analysis.id}-pdf`}
+                      title="Download PDF report"
+                    >
+                      <FileText className="h-4 w-4 text-red-600" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleExport(analysis.id, 'pptx')}
+                      disabled={exportingId === `${analysis.id}-pptx`}
+                      title="Download PowerPoint (.pptx)"
+                    >
+                      <Presentation className="h-4 w-4 text-orange-500" />
+                    </Button>
 
                     <Button
                       variant="ghost"
