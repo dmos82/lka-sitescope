@@ -30,6 +30,28 @@ const STATUS_COLORS: Record<string, string> = {
 
 const MILES_TO_METERS = 1609.344;
 
+// POI category colors
+const POI_COLORS: Record<string, string> = {
+  school: '#3b82f6',         // blue
+  library: '#22c55e',        // green
+  community_center: '#f97316', // orange
+  grocery: '#ef4444',        // red
+  art_gallery: '#a855f7',    // purple
+  museum: '#14b8a6',         // teal
+};
+
+const POI_LABELS: Record<string, string> = {
+  school: 'Schools',
+  library: 'Libraries',
+  community_center: 'Community Centers',
+  grocery: 'Grocery Stores',
+  art_gallery: 'Art Galleries',
+  museum: 'Museums',
+};
+
+type POICategory = 'school' | 'library' | 'community_center' | 'grocery' | 'art_gallery' | 'museum';
+const POI_CATEGORIES: POICategory[] = ['school', 'library', 'community_center', 'grocery', 'art_gallery', 'museum'];
+
 // Generate GeoJSON circle polygon for territory radius
 function createCirclePolygon(lng: number, lat: number, radiusMiles: number, steps = 64) {
   const radiusMeters = radiusMiles * MILES_TO_METERS;
@@ -38,7 +60,6 @@ function createCirclePolygon(lng: number, lat: number, radiusMiles: number, step
     const angle = (i / steps) * 2 * Math.PI;
     const dx = radiusMeters * Math.cos(angle);
     const dy = radiusMeters * Math.sin(angle);
-    // Convert meters to degrees (approximate)
     const dLat = dy / 111320;
     const dLng = dx / (111320 * Math.cos((lat * Math.PI) / 180));
     coords.push([lng + dLng, lat + dLat]);
@@ -53,7 +74,6 @@ function createCirclePolygon(lng: number, lat: number, radiusMiles: number, step
   };
 }
 
-// Create trade area circle GeoJSON
 function createTradeAreaCircle(lng: number, lat: number, radiusMiles: number) {
   return createCirclePolygon(lng, lat, radiusMiles, 128);
 }
@@ -73,11 +93,56 @@ interface IsochroneResponse {
   note?: string;
 }
 
+interface BoundaryFeature {
+  type: 'Feature';
+  geometry: { type: string; coordinates: unknown };
+  properties: { name: string; geoid?: string; layer: string };
+}
+
+interface BoundaryResult {
+  place?: BoundaryFeature | null;
+  county?: BoundaryFeature | null;
+  tract?: BoundaryFeature | null;
+  source: string;
+}
+
+interface PlaceItem {
+  id: string;
+  name: string;
+  category: POICategory;
+  address?: string;
+  phone?: string;
+  website?: string;
+  rating?: number;
+  lat: number;
+  lng: number;
+  place_id?: string;
+  opening_hours?: string;
+  source: string;
+  distance_miles?: number;
+}
+
+interface PlacesResponse {
+  total: number;
+  summary: Record<string, number>;
+  results: Record<POICategory, PlaceItem[]>;
+  google_enabled: boolean;
+}
+
 interface LayerState {
   lkaLocations: boolean;
   territories: boolean;
   tradeArea: boolean;
   isochrones: boolean;
+  cityBoundary: boolean;
+  countyBoundary: boolean;
+  // POI categories
+  school: boolean;
+  library: boolean;
+  community_center: boolean;
+  grocery: boolean;
+  art_gallery: boolean;
+  museum: boolean;
 }
 
 export default function MapView({ searchQuery, onLocationSelect }: MapViewProps) {
@@ -85,16 +150,28 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const marker = useRef<maplibregl.Marker | null>(null);
+  const poiMarkers = useRef<Map<string, maplibregl.Marker[]>>(new Map());
   const [isReady, setIsReady] = useState(false);
   const [layers, setLayers] = useState<LayerState>({
     lkaLocations: true,
     territories: true,
     tradeArea: true,
     isochrones: false,
+    cityBoundary: false,
+    countyBoundary: false,
+    school: false,
+    library: false,
+    community_center: false,
+    grocery: false,
+    art_gallery: false,
+    museum: false,
   });
   const [isochroneLoading, setIsochroneLoading] = useState(false);
+  const [boundaryLoading, setBoundaryLoading] = useState(false);
+  const [poiLoading, setPoiLoading] = useState<Partial<Record<POICategory, boolean>>>({});
   const [lkaLocations, setLkaLocations] = useState<LkaLocationData[]>([]);
   const [selectedMarkerPos, setSelectedMarkerPos] = useState<{ lat: number; lng: number } | null>(null);
+  const [poiData, setPoiData] = useState<Partial<Record<POICategory, PlaceItem[]>>>({});
   const tradeAreaMilesRef = useRef(5);
 
   // Fetch LKA locations
@@ -102,7 +179,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
     if (!token) return;
     apiFetch<LkaLocationData[]>('/api/lka-locations', { token })
       .then(setLkaLocations)
-      .catch(() => {}); // Non-critical
+      .catch(() => {});
   }, [token]);
 
   // Initialize map
@@ -128,7 +205,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
     map.current.on('load', () => {
       const m = map.current!;
 
-      // ── Trade area ring source ──────────────────────────────────────────────
+      // ── Trade area ring ──────────────────────────────────────────────────────
       m.addSource('trade-area', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -137,23 +214,16 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
         id: 'trade-area-fill',
         type: 'fill',
         source: 'trade-area',
-        paint: {
-          'fill-color': '#2563eb',
-          'fill-opacity': 0.07,
-        },
+        paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.07 },
       });
       m.addLayer({
         id: 'trade-area-line',
         type: 'line',
         source: 'trade-area',
-        paint: {
-          'line-color': '#2563eb',
-          'line-width': 2,
-          'line-dasharray': [3, 2],
-        },
+        paint: { 'line-color': '#2563eb', 'line-width': 2, 'line-dasharray': [3, 2] },
       });
 
-      // ── Isochrone source ────────────────────────────────────────────────────
+      // ── Isochrone ────────────────────────────────────────────────────────────
       m.addSource('isochrones', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -163,23 +233,57 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
         type: 'fill',
         source: 'isochrones',
         layout: { visibility: 'none' },
-        paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': 0.15,
-        },
+        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.15 },
       });
       m.addLayer({
         id: 'isochrones-line',
         type: 'line',
         source: 'isochrones',
         layout: { visibility: 'none' },
-        paint: {
-          'line-color': ['get', 'color'],
-          'line-width': 2,
-        },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 2 },
       });
 
-      // ── LKA territory circles source ────────────────────────────────────────
+      // ── City boundary ────────────────────────────────────────────────────────
+      m.addSource('city-boundary', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      m.addLayer({
+        id: 'city-boundary-fill',
+        type: 'fill',
+        source: 'city-boundary',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#7c3aed', 'fill-opacity': 0.05 },
+      });
+      m.addLayer({
+        id: 'city-boundary-line',
+        type: 'line',
+        source: 'city-boundary',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#7c3aed', 'line-width': 2, 'line-dasharray': [4, 2] },
+      });
+
+      // ── County boundary ──────────────────────────────────────────────────────
+      m.addSource('county-boundary', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      m.addLayer({
+        id: 'county-boundary-fill',
+        type: 'fill',
+        source: 'county-boundary',
+        layout: { visibility: 'none' },
+        paint: { 'fill-color': '#0891b2', 'fill-opacity': 0.04 },
+      });
+      m.addLayer({
+        id: 'county-boundary-line',
+        type: 'line',
+        source: 'county-boundary',
+        layout: { visibility: 'none' },
+        paint: { 'line-color': '#0891b2', 'line-width': 2, 'line-dasharray': [6, 3] },
+      });
+
+      // ── LKA territories ──────────────────────────────────────────────────────
       m.addSource('territories', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -188,22 +292,16 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
         id: 'territories-fill',
         type: 'fill',
         source: 'territories',
-        paint: {
-          'fill-color': ['get', 'color'],
-          'fill-opacity': 0.08,
-        },
+        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.08 },
       });
       m.addLayer({
         id: 'territories-line',
         type: 'line',
         source: 'territories',
-        paint: {
-          'line-color': ['get', 'color'],
-          'line-width': 2,
-        },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 2 },
       });
 
-      // ── LKA location markers source ─────────────────────────────────────────
+      // ── LKA location markers ─────────────────────────────────────────────────
       m.addSource('lka-locations', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
@@ -257,7 +355,6 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
 
     // Click to place marker
     map.current.on('click', (e) => {
-      // Don't intercept clicks on LKA location circles
       const features = map.current?.queryRenderedFeatures(e.point, { layers: ['lka-locations-circle'] });
       if (features && features.length > 0) return;
 
@@ -280,8 +377,6 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       .setLngLat([lng, lat])
       .addTo(map.current);
     map.current.flyTo({ center: [lng, lat], zoom: 12, duration: 1000 });
-
-    // Update trade area ring
     updateTradeArea(lng, lat, tradeAreaMilesRef.current);
   }
 
@@ -294,7 +389,103 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
     });
   }
 
-  // Update LKA locations on map when data loaded + layers change
+  // ── Fetch boundaries when location selected ────────────────────────────────
+
+  const fetchBoundaries = useCallback(async (lat: number, lng: number) => {
+    if (!token || !map.current) return;
+    setBoundaryLoading(true);
+    try {
+      const params = new URLSearchParams({ lat: lat.toString(), lng: lng.toString() });
+      const result = await apiFetch<BoundaryResult>(`/api/boundaries?${params}`, { token });
+
+      const citySource = map.current.getSource('city-boundary') as maplibregl.GeoJSONSource | undefined;
+      if (citySource) {
+        const features = result.place ? [result.place] : [];
+        citySource.setData({ type: 'FeatureCollection', features } as Parameters<typeof citySource.setData>[0]);
+      }
+
+      const countySource = map.current.getSource('county-boundary') as maplibregl.GeoJSONSource | undefined;
+      if (countySource) {
+        const features = result.county ? [result.county] : [];
+        countySource.setData({ type: 'FeatureCollection', features } as Parameters<typeof countySource.setData>[0]);
+      }
+    } catch (err) {
+      console.error('[MapView] Boundary fetch error:', err);
+    } finally {
+      setBoundaryLoading(false);
+    }
+  }, [token]);
+
+  // ── Fetch POIs for a category ──────────────────────────────────────────────
+
+  const clearPoiMarkers = useCallback((category: POICategory) => {
+    const existing = poiMarkers.current.get(category) ?? [];
+    existing.forEach((m) => m.remove());
+    poiMarkers.current.set(category, []);
+  }, []);
+
+  const fetchAndRenderPOIs = useCallback(async (lat: number, lng: number, category: POICategory) => {
+    if (!token || !map.current) return;
+
+    setPoiLoading((prev) => ({ ...prev, [category]: true }));
+    clearPoiMarkers(category);
+
+    try {
+      const params = new URLSearchParams({
+        lat: lat.toString(),
+        lng: lng.toString(),
+        radius_miles: tradeAreaMilesRef.current.toString(),
+        categories: category,
+      });
+      const result = await apiFetch<PlacesResponse>(`/api/places?${params}`, { token });
+      const items = result.results[category] ?? [];
+
+      setPoiData((prev) => ({ ...prev, [category]: items }));
+
+      if (!map.current) return;
+      const color = POI_COLORS[category] ?? '#666';
+      const markers: maplibregl.Marker[] = [];
+
+      for (const poi of items) {
+        const el = document.createElement('div');
+        el.style.cssText = `
+          width: 12px; height: 12px;
+          border-radius: 50%;
+          background: ${color};
+          border: 2px solid white;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+          cursor: pointer;
+        `;
+
+        const popup = new maplibregl.Popup({ offset: 12, maxWidth: '260px' }).setHTML(
+          `<div style="font-family:sans-serif;font-size:12px;line-height:1.5">
+            <strong style="font-size:13px">${escapeHtml(poi.name)}</strong><br/>
+            ${poi.address ? `<span style="color:#555">${escapeHtml(poi.address)}</span><br/>` : ''}
+            ${poi.phone ? `<span style="color:#555">Tel: ${escapeHtml(poi.phone)}</span><br/>` : ''}
+            ${poi.rating !== undefined ? `<span style="color:#d97706">Rating: ${poi.rating}/5</span><br/>` : ''}
+            ${poi.opening_hours ? `<span style="color:#16a34a">${escapeHtml(poi.opening_hours)}</span><br/>` : ''}
+            ${poi.distance_miles !== undefined ? `<span style="color:#888;font-size:11px">${poi.distance_miles.toFixed(1)} mi away</span><br/>` : ''}
+            ${poi.website ? `<a href="${escapeHtml(poi.website)}" target="_blank" rel="noopener" style="color:#2563eb;font-size:11px">Website</a>` : ''}
+          </div>`
+        );
+
+        const m2 = new maplibregl.Marker({ element: el })
+          .setLngLat([poi.lng, poi.lat])
+          .setPopup(popup)
+          .addTo(map.current!);
+
+        markers.push(m2);
+      }
+
+      poiMarkers.current.set(category, markers);
+    } catch (err) {
+      console.error(`[MapView] POI fetch error (${category}):`, err);
+    } finally {
+      setPoiLoading((prev) => ({ ...prev, [category]: false }));
+    }
+  }, [token, clearPoiMarkers]);
+
+  // Update LKA locations
   useEffect(() => {
     if (!isReady || !map.current) return;
 
@@ -336,7 +527,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
     }
   }, [lkaLocations, isReady]);
 
-  // Toggle layer visibility
+  // Toggle layer visibility (map GL layers)
   useEffect(() => {
     if (!isReady || !map.current) return;
     const m = map.current;
@@ -354,7 +545,23 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
     setVis('trade-area-line', layers.tradeArea);
     setVis('isochrones-fill', layers.isochrones);
     setVis('isochrones-line', layers.isochrones);
+    setVis('city-boundary-fill', layers.cityBoundary);
+    setVis('city-boundary-line', layers.cityBoundary);
+    setVis('county-boundary-fill', layers.countyBoundary);
+    setVis('county-boundary-line', layers.countyBoundary);
   }, [layers, isReady]);
+
+  // Handle POI layer toggles — show/hide markers
+  useEffect(() => {
+    for (const cat of POI_CATEGORIES) {
+      const visible = layers[cat];
+      const markers = poiMarkers.current.get(cat) ?? [];
+      for (const m of markers) {
+        const el = m.getElement();
+        el.style.display = visible ? 'block' : 'none';
+      }
+    }
+  }, [layers]);
 
   // Handle search query
   useEffect(() => {
@@ -396,28 +603,54 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
   }
 
   function toggleLayer(key: keyof LayerState) {
+    const pos = selectedMarkerPos;
     setLayers((prev) => {
       const next = { ...prev, [key]: !prev[key] };
+
       // Fetch isochrones when toggling on
-      if (key === 'isochrones' && !prev.isochrones && selectedMarkerPos) {
-        fetchAndRenderIsochrones(selectedMarkerPos.lat, selectedMarkerPos.lng);
+      if (key === 'isochrones' && !prev.isochrones && pos) {
+        fetchAndRenderIsochrones(pos.lat, pos.lng);
       }
+
+      // Fetch boundary data when toggling city/county on
+      if ((key === 'cityBoundary' || key === 'countyBoundary') && !prev[key] && pos) {
+        fetchBoundaries(pos.lat, pos.lng);
+      }
+
+      // Fetch POI data when toggling a category on
+      if (POI_CATEGORIES.includes(key as POICategory) && !prev[key as POICategory] && pos) {
+        const cat = key as POICategory;
+        if (!poiData[cat] || poiData[cat]!.length === 0) {
+          fetchAndRenderPOIs(pos.lat, pos.lng, cat);
+        } else {
+          // Already fetched — just show markers
+          const markers = poiMarkers.current.get(cat) ?? [];
+          for (const m of markers) {
+            m.getElement().style.display = 'block';
+          }
+        }
+      }
+
       return next;
     });
   }
+
+  const totalPoiCount = Object.values(poiData).reduce((sum, arr) => sum + (arr?.length ?? 0), 0);
 
   return (
     <div className="relative w-full h-full" style={{ minHeight: '400px' }}>
       <div ref={mapContainer} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }} />
 
       {/* Layer control panel */}
-      <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border p-3 space-y-2 text-sm">
+      <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-sm rounded-lg shadow-lg border p-3 space-y-1.5 text-sm max-h-[calc(100vh-100px)] overflow-y-auto" style={{ width: '190px' }}>
         <p className="font-semibold text-xs text-muted-foreground uppercase tracking-wider mb-2">Layers</p>
+
+        {/* Core layers */}
         {[
           { key: 'lkaLocations' as const, label: 'LKA Locations' },
           { key: 'territories' as const, label: 'Territory Radii' },
           { key: 'tradeArea' as const, label: 'Trade Area Ring' },
-          { key: 'isochrones' as const, label: isochroneLoading ? 'Drive Times (loading...)' : 'Drive Times (10/15/20 min)' },
+          { key: 'isochrones' as const, label: isochroneLoading ? 'Drive Times (loading...)' : 'Drive Times' },
         ].map(({ key, label }) => (
           <label key={key} className="flex items-center gap-2 cursor-pointer">
             <input
@@ -433,9 +666,62 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
           </label>
         ))}
 
+        {/* Boundary layers */}
+        <div className="pt-1.5 mt-1 border-t">
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">
+            Boundaries {boundaryLoading ? '(loading...)' : ''}
+          </p>
+          {[
+            { key: 'cityBoundary' as const, label: 'City Boundary', color: '#7c3aed' },
+            { key: 'countyBoundary' as const, label: 'County Boundary', color: '#0891b2' },
+          ].map(({ key, label, color }) => (
+            <label key={key} className="flex items-center gap-2 cursor-pointer mb-1">
+              <input
+                type="checkbox"
+                checked={layers[key]}
+                onChange={() => toggleLayer(key)}
+                disabled={!selectedMarkerPos}
+                className="h-3.5 w-3.5 rounded"
+              />
+              <span className="flex items-center gap-1.5 text-xs">
+                <span className="h-2 w-4 inline-block rounded-sm shrink-0" style={{ background: color, opacity: 0.7 }} />
+                {label}
+              </span>
+            </label>
+          ))}
+        </div>
+
+        {/* POI layers */}
+        <div className="pt-1.5 mt-1 border-t">
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">
+            POIs {totalPoiCount > 0 ? `(${totalPoiCount})` : ''}
+          </p>
+          {POI_CATEGORIES.map((cat) => (
+            <label key={cat} className="flex items-center gap-2 cursor-pointer mb-1">
+              <input
+                type="checkbox"
+                checked={layers[cat]}
+                onChange={() => toggleLayer(cat)}
+                disabled={!selectedMarkerPos}
+                className="h-3.5 w-3.5 rounded"
+              />
+              <span className="flex items-center gap-1.5 text-xs">
+                <span
+                  className="h-2.5 w-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: POI_COLORS[cat] }}
+                />
+                <span className={!selectedMarkerPos ? 'text-muted-foreground/50' : ''}>
+                  {POI_LABELS[cat]}
+                  {poiLoading[cat] ? ' ...' : poiData[cat] ? ` (${poiData[cat]!.length})` : ''}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+
         {/* Isochrone legend */}
         {layers.isochrones && (
-          <div className="pt-2 mt-1 border-t space-y-1">
+          <div className="pt-1.5 mt-1 border-t space-y-1">
             {[
               { color: '#22c55e', label: '10 min drive' },
               { color: '#eab308', label: '15 min drive' },
@@ -451,7 +737,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
 
         {/* LKA status legend */}
         {layers.lkaLocations && lkaLocations.length > 0 && (
-          <div className="pt-2 mt-2 border-t space-y-1">
+          <div className="pt-1.5 mt-1 border-t space-y-1">
             {[
               { status: 'OPEN', label: 'Open' },
               { status: 'COMING_SOON', label: 'Coming Soon' },
@@ -470,4 +756,13 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       </div>
     </div>
   );
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

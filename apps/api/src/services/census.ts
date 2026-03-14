@@ -75,6 +75,12 @@ interface ACSVariables {
   B19001_017E: number; // $200K+
   B19013_001E: number; // Median household income
   B09001_001E: number; // Population under 18
+  B09001_003E: number; // Children 3-4 years
+  B09001_004E: number; // Children 5 years
+  B09001_005E: number; // Children 6-8 years
+  B09001_006E: number; // Children 9-11 years
+  B09001_007E: number; // Children 12-14 years
+  B09001_008E: number; // Children 15-17 years
   B25077_001E: number; // Median home value
   B15003_022E: number; // Bachelor's degree
   B15003_023E: number; // Master's degree
@@ -86,7 +92,10 @@ interface ACSVariables {
 
 const ACS_VARS = [
   'B19001_001E', 'B19001_014E', 'B19001_015E', 'B19001_016E', 'B19001_017E',
-  'B19013_001E', 'B09001_001E', 'B25077_001E',
+  'B19013_001E',
+  'B09001_001E', 'B09001_003E', 'B09001_004E', 'B09001_005E',
+  'B09001_006E', 'B09001_007E', 'B09001_008E',
+  'B25077_001E',
   'B15003_001E', 'B15003_022E', 'B15003_023E', 'B15003_024E', 'B15003_025E',
   'B01003_001E',
 ].join(',');
@@ -150,6 +159,12 @@ export async function getDemographicsForLocation(
     acs.B15003_022E + acs.B15003_023E + acs.B15003_024E + acs.B15003_025E;
   const totalAdults = acs.B15003_001E || 1;
 
+  // Children 3-17 (B09001_003E through B09001_008E)
+  const children3_17 =
+    acs.B09001_003E + acs.B09001_004E + acs.B09001_005E +
+    acs.B09001_006E + acs.B09001_007E + acs.B09001_008E;
+  const totalPop = acs.B01003_001E || 1;
+
   return {
     tract_geoid: tract.geoid,
     median_household_income: acs.B19013_001E,
@@ -158,8 +173,10 @@ export async function getDemographicsForLocation(
     households_above_threshold: highIncomeHouseholds,
     pct_above_threshold: (highIncomeHouseholds / totalHouseholds) * 100,
     median_home_value: acs.B25077_001E,
-    pct_with_children: (acs.B09001_001E / (acs.B01003_001E || 1)) * 100,
+    pct_with_children: (acs.B09001_001E / totalPop) * 100,
     pct_college_educated: (collegePop / totalAdults) * 100,
+    children_3_17: children3_17,
+    pct_children_3_17: (children3_17 / totalPop) * 100,
     source: 'Census ACS 2022',
     fetched_at: new Date().toISOString(),
   };

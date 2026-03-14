@@ -109,6 +109,9 @@ export interface ScoringResult {
 
 export interface DemographicResult {
   tract_geoid?: string;
+  place_geoid?: string;
+  place_name?: string;
+  county_name?: string;
   median_household_income?: number;
   population?: number;
   households?: number;
@@ -118,6 +121,10 @@ export interface DemographicResult {
   pct_with_children?: number;
   pct_college_educated?: number;
   pop_growth_rate?: number;
+  /** Children aged 3-17 (B09001_003E through B09001_008E) */
+  children_3_17?: number;
+  /** Percentage of total population aged 3-17 */
+  pct_children_3_17?: number;
   source?: string;
   fetched_at?: string;
 }

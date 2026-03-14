@@ -7,11 +7,36 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { BarChart2, MapPin, RefreshCw, ChevronRight, AlertCircle } from 'lucide-react';
+import { BarChart2, MapPin, RefreshCw, ChevronRight, AlertCircle, Users, School, BookOpen, Building2, ShoppingCart, Palette, Landmark } from 'lucide-react';
 import { useLocation } from '@/hooks/useLocation';
 import { useAuth } from '@/hooks/useAuth';
 import { apiFetch } from '@/lib/api-client';
 import type { DemographicResult } from '@lka/shared';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface PlaceItem {
+  id: string;
+  name: string;
+  category: string;
+  address?: string;
+  distance_miles?: number;
+}
+
+interface PlacesResponse {
+  total: number;
+  summary: Record<string, number>;
+  results: Record<string, PlaceItem[]>;
+  google_enabled: boolean;
+}
+
+interface BoundaryResult {
+  place?: { properties: { name: string } } | null;
+  county?: { properties: { name: string } } | null;
+  source: string;
+}
+
+// ─── Formatters ───────────────────────────────────────────────────────────────
 
 function formatCurrency(value?: number, currency = 'USD'): string {
   if (value === undefined || value === null) return '—';
@@ -32,6 +57,19 @@ function formatPct(value?: number): string {
   return `${value.toFixed(1)}%`;
 }
 
+// ─── POI category config ──────────────────────────────────────────────────────
+
+const POI_CATEGORIES = [
+  { key: 'school', label: 'Schools', icon: School, color: '#3b82f6' },
+  { key: 'library', label: 'Libraries', icon: BookOpen, color: '#22c55e' },
+  { key: 'community_center', label: 'Community Centers', icon: Building2, color: '#f97316' },
+  { key: 'grocery', label: 'Grocery Stores', icon: ShoppingCart, color: '#ef4444' },
+  { key: 'art_gallery', label: 'Art Galleries', icon: Palette, color: '#a855f7' },
+  { key: 'museum', label: 'Museums', icon: Landmark, color: '#14b8a6' },
+];
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+
 export default function DemographicsPage() {
   const { location, updateTradeArea, updateIncomeThreshold } = useLocation();
   const { token } = useAuth();
@@ -42,6 +80,11 @@ export default function DemographicsPage() {
   const [error, setError] = useState<string | null>(null);
   const [tradeAreaInput, setTradeAreaInput] = useState('5');
   const [incomeInput, setIncomeInput] = useState('125000');
+
+  const [poiData, setPoiData] = useState<PlacesResponse | null>(null);
+  const [poiLoading, setPoiLoading] = useState(false);
+
+  const [boundaryData, setBoundaryData] = useState<BoundaryResult | null>(null);
 
   const fetchDemographics = useCallback(async () => {
     if (!location || !token) return;
@@ -63,12 +106,49 @@ export default function DemographicsPage() {
     }
   }, [location, token]);
 
+  const fetchPOIs = useCallback(async () => {
+    if (!location || !token) return;
+    setPoiLoading(true);
+    try {
+      const params = new URLSearchParams({
+        lat: location.lat.toString(),
+        lng: location.lng.toString(),
+        radius_miles: location.trade_area_miles.toString(),
+      });
+      const result = await apiFetch<PlacesResponse>(`/api/places?${params}`, { token });
+      setPoiData(result);
+    } catch (_err) {
+      // POI data is non-critical — silently fail
+    } finally {
+      setPoiLoading(false);
+    }
+  }, [location, token]);
+
+  const fetchBoundaries = useCallback(async () => {
+    if (!location || !token || location.country === 'CA') return;
+    try {
+      const params = new URLSearchParams({
+        lat: location.lat.toString(),
+        lng: location.lng.toString(),
+      });
+      const result = await apiFetch<BoundaryResult>(`/api/boundaries?${params}`, { token });
+      setBoundaryData(result);
+    } catch (_err) {
+      // Non-critical
+    }
+  }, [location, token]);
+
   // Auto-fetch when location changes
   useEffect(() => {
     if (location) {
       setTradeAreaInput(location.trade_area_miles.toString());
       setIncomeInput(location.income_threshold.toString());
+      setData(null);
+      setPoiData(null);
+      setBoundaryData(null);
       fetchDemographics();
+      fetchPOIs();
+      fetchBoundaries();
     }
   }, [location?.lat, location?.lng]);
 
@@ -78,6 +158,7 @@ export default function DemographicsPage() {
     if (!isNaN(miles) && miles > 0) updateTradeArea(miles);
     if (!isNaN(threshold) && threshold > 0) updateIncomeThreshold(threshold);
     fetchDemographics();
+    fetchPOIs();
   }
 
   const currency = location?.country === 'CA' ? 'CAD' : 'USD';
@@ -107,14 +188,22 @@ export default function DemographicsPage() {
           <p className="text-muted-foreground mt-1 flex items-center gap-1.5">
             <MapPin className="h-3.5 w-3.5" />
             <span className="truncate max-w-[400px]">{location.address}</span>
-            <Badge variant="outline" className="text-xs">
-              {location.country}
-            </Badge>
+            <Badge variant="outline" className="text-xs">{location.country}</Badge>
+            {boundaryData?.place?.properties.name && (
+              <Badge variant="secondary" className="text-xs">
+                {boundaryData.place.properties.name}
+              </Badge>
+            )}
+            {boundaryData?.county?.properties.name && (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                {boundaryData.county.properties.name}
+              </Badge>
+            )}
           </p>
         </div>
         <Button
           variant="outline"
-          onClick={fetchDemographics}
+          onClick={() => { fetchDemographics(); fetchPOIs(); fetchBoundaries(); }}
           disabled={loading}
           className="flex items-center gap-2"
         >
@@ -172,7 +261,7 @@ export default function DemographicsPage() {
       {/* Loading skeleton */}
       {loading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 8 }).map((_, i) => (
             <Card key={i}>
               <CardContent className="pt-6">
                 <div className="h-8 bg-muted rounded animate-pulse mb-2" />
@@ -186,6 +275,7 @@ export default function DemographicsPage() {
       {/* Data */}
       {!loading && data && (
         <>
+          {/* Core metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -231,6 +321,32 @@ export default function DemographicsPage() {
               </CardContent>
             </Card>
 
+            {/* Children 3-17 card */}
+            <Card className="border-blue-100">
+              <CardHeader className="pb-2">
+                <CardDescription className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-blue-500" />
+                  Children Ages 3–17
+                </CardDescription>
+                <CardTitle className="text-3xl text-blue-700">
+                  {formatNumber(data.children_3_17)}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground">
+                  {formatPct(data.pct_children_3_17)} of total population
+                  {data.children_3_17 !== undefined && data.children_3_17 > 0 && (
+                    <Badge
+                      variant="outline"
+                      className="ml-2 text-xs border-blue-200 text-blue-700"
+                    >
+                      Target age group
+                    </Badge>
+                  )}
+                </p>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Households w/ Children</CardDescription>
@@ -239,7 +355,7 @@ export default function DemographicsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground">Of total households</p>
+                <p className="text-xs text-muted-foreground">Of total population under 18</p>
               </CardContent>
             </Card>
 
@@ -251,9 +367,7 @@ export default function DemographicsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-xs text-muted-foreground">
-                  Bachelor's degree or higher
-                </p>
+                <p className="text-xs text-muted-foreground">Bachelor's degree or higher</p>
               </CardContent>
             </Card>
 
@@ -272,7 +386,7 @@ export default function DemographicsPage() {
             </Card>
           </div>
 
-          {/* Median Home Value */}
+          {/* Additional indicators */}
           {data.median_home_value && (
             <Card>
               <CardHeader className="pb-2">
@@ -306,6 +420,61 @@ export default function DemographicsPage() {
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* POI Summary */}
+          {(poiLoading || poiData) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <MapPin className="h-4 w-4" />
+                  Nearby Points of Interest
+                  {poiLoading && <span className="text-xs text-muted-foreground font-normal">(loading...)</span>}
+                  {poiData && !poiLoading && (
+                    <Badge variant="secondary" className="text-xs">
+                      {poiData.total} total within {location.trade_area_miles} mi
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  {poiData?.google_enabled ? 'Via Google Places' : 'Via OpenStreetMap'} — select categories on the map to see markers
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {poiLoading && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {POI_CATEGORIES.map((cat) => (
+                      <div key={cat.key} className="h-16 bg-muted rounded animate-pulse" />
+                    ))}
+                  </div>
+                )}
+                {poiData && !poiLoading && (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {POI_CATEGORIES.map((cat) => {
+                      const count = poiData.summary[cat.key] ?? 0;
+                      const Icon = cat.icon;
+                      return (
+                        <div
+                          key={cat.key}
+                          className="flex items-center gap-3 p-3 rounded-lg border bg-muted/30"
+                        >
+                          <div
+                            className="h-9 w-9 rounded-full flex items-center justify-center shrink-0"
+                            style={{ backgroundColor: `${cat.color}20` }}
+                          >
+                            <Icon className="h-4 w-4" style={{ color: cat.color }} />
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold leading-none">{count}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{cat.label}</p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

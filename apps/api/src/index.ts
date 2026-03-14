@@ -23,6 +23,8 @@ import isochroneRoutes from './routes/isochrone';
 import schoolsRoutes from './routes/schools';
 import exportRoutes from './routes/export';
 import dataHealthRoutes from './routes/data-health';
+import placesRoutes from './routes/places';
+import boundariesRoutes from './routes/boundaries';
 
 const app = express();
 const PORT = process.env.PORT ?? 4100;
@@ -47,6 +49,7 @@ app.use(
           'api.census.gov',
           'tigerweb.geo.census.gov',
           'api.openrouteservice.org',
+          'places.googleapis.com',
         ],
         workerSrc: ["'self'", 'blob:'],
         fontSrc: ["'self'", 'data:'],
@@ -129,6 +132,8 @@ app.use('/api/isochrone', isochroneRoutes);
 app.use('/api/schools', schoolsRoutes);
 app.use('/api/export', exportRoutes);
 app.use('/api/data-health', dataHealthRoutes);
+app.use('/api/places', placesRoutes);
+app.use('/api/boundaries', boundariesRoutes);
 
 // ─── Error Handler ──────────────────────────────────────────────────────────
 app.use(

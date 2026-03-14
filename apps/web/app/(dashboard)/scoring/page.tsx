@@ -68,6 +68,21 @@ interface POIResponse {
   results: POIResult[];
 }
 
+// New Google Places response shape
+interface PlaceItem {
+  id: string;
+  name: string;
+  category: string;
+  distance_miles?: number;
+}
+
+interface PlacesResponse {
+  total: number;
+  summary: Record<string, number>;
+  results: Record<string, PlaceItem[]>;
+  google_enabled: boolean;
+}
+
 export default function ScoringPage() {
   const { location } = useLocation();
   const { token } = useAuth();
@@ -89,6 +104,7 @@ export default function ScoringPage() {
   const [error, setError] = useState<string | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [nearbyPOIs, setNearbyPOIs] = useState<POIResult[]>([]);
+  const [autoFillSummary, setAutoFillSummary] = useState<string | null>(null);
 
   // Auto-fill from demographics when location changes
   useEffect(() => {
@@ -102,51 +118,103 @@ export default function ScoringPage() {
     if (!location || !token) return;
     setAutoFilling(true);
     setError(null);
+    setAutoFillSummary(null);
 
     try {
-      // Fetch POIs concurrently
-      const params = new URLSearchParams({
+      // Fetch from Google Places (new endpoint) + demographics concurrently
+      const placesParams = new URLSearchParams({
         lat: location.lat.toString(),
         lng: location.lng.toString(),
         radius_miles: location.trade_area_miles.toString(),
-        type: 'all',
       });
-      const poi = await apiFetch<POIResponse>(`/api/poi?${params}`, { token });
-      setNearbyPOIs(poi.results);
 
-      // Also fetch demographics for population growth
       const demoParams = new URLSearchParams({
         lat: location.lat.toString(),
         lng: location.lng.toString(),
         trade_area_miles: location.trade_area_miles.toString(),
       });
-      const demo = await apiFetch<{ pop_growth_rate?: number; households_above_threshold?: number }>(`/api/demographics?${demoParams}`, { token });
 
-      // Calculate school quality score
-      const schools = poi.results.filter((p) => p.type === 'school');
-      let schoolScore = 0;
-      for (const school of schools) {
-        if (school.category === 'Montessori') schoolScore += 3;
-        else if (school.category === 'Private K-8') schoolScore += 2;
-        else if (school.category === 'Preschool') schoolScore += 2;
-        else schoolScore += 1;
+      const [placesResult, demo] = await Promise.allSettled([
+        apiFetch<PlacesResponse>(`/api/places?${placesParams}`, { token }),
+        apiFetch<{ pop_growth_rate?: number; households_above_threshold?: number; children_3_17?: number }>(
+          `/api/demographics?${demoParams}`,
+          { token }
+        ),
+      ]);
+
+      let schoolCount = 0;
+      let communityCount = 0;
+      let competitorCount = 0;
+      let dataSource = 'OpenStreetMap';
+
+      if (placesResult.status === 'fulfilled') {
+        const places = placesResult.value;
+        dataSource = places.google_enabled ? 'Google Places' : 'OpenStreetMap';
+
+        schoolCount = places.summary['school'] ?? 0;
+        communityCount =
+          (places.summary['library'] ?? 0) +
+          (places.summary['community_center'] ?? 0) +
+          (places.summary['art_gallery'] ?? 0) +
+          (places.summary['museum'] ?? 0);
+        // Competitors: we still use old /api/poi for competitor types (Montessori, Kumon, etc.)
+      } else {
+        // Fallback to legacy Overpass endpoint
+        const legacyParams = new URLSearchParams({
+          lat: location.lat.toString(),
+          lng: location.lng.toString(),
+          radius_miles: location.trade_area_miles.toString(),
+          type: 'all',
+        });
+        try {
+          const poi = await apiFetch<POIResponse>(`/api/poi?${legacyParams}`, { token });
+          setNearbyPOIs(poi.results);
+          schoolCount = poi.results.filter((p) => p.type === 'school').length;
+          communityCount = poi.results.filter((p) => p.type === 'community').length;
+          competitorCount = poi.results.filter((p) => p.type === 'competitor').length;
+          dataSource = 'OpenStreetMap';
+        } catch (_legacyErr) {
+          // Ignore
+        }
       }
 
-      // Community POI count
-      const communityPOIs = poi.results.filter((p) => p.type === 'community');
+      // Also fetch competitor counts from legacy route (has Montessori/Kumon classification)
+      if (competitorCount === 0) {
+        try {
+          const compParams = new URLSearchParams({
+            lat: location.lat.toString(),
+            lng: location.lng.toString(),
+            radius_miles: location.trade_area_miles.toString(),
+            type: 'competitors',
+          });
+          const compPoi = await apiFetch<POIResponse>(`/api/poi?${compParams}`, { token });
+          competitorCount = compPoi.results.filter((p) => p.type === 'competitor').length;
+        } catch (_err) {
+          // Ignore
+        }
+      }
 
-      // Competitor score (fewer = higher score)
-      const competitors = poi.results.filter((p) => p.type === 'competitor');
-      const competitorScore = Math.max(0, 100 - competitors.length * 15);
+      // School quality: base on count * 1pt per school (benchmark 0-50)
+      const schoolScore = Math.min(50, schoolCount);
+      // Community: count of community venues (benchmark 0-30)
+      const communityScore = Math.min(30, communityCount);
+      // Competitor score: fewer = higher (0 competitors = 100, each -15)
+      const competitorScore = Math.max(0, 100 - competitorCount * 15);
+
+      const demoData = demo.status === 'fulfilled' ? demo.value : null;
 
       setInputs((prev) => ({
         ...prev,
-        school_quality_score: Math.min(50, schoolScore).toString(),
-        community_poi_count: Math.min(30, communityPOIs.length).toString(),
+        school_quality_score: schoolScore.toString(),
+        community_poi_count: communityScore.toString(),
         competitor_score: competitorScore.toString(),
-        population_growth_pct: demo.pop_growth_rate?.toFixed(1) ?? prev.population_growth_pct,
-        target_households_count: demo.households_above_threshold?.toString() ?? prev.target_households_count,
+        population_growth_pct: demoData?.pop_growth_rate?.toFixed(1) ?? prev.population_growth_pct,
+        target_households_count: demoData?.households_above_threshold?.toString() ?? prev.target_households_count,
       }));
+
+      setAutoFillSummary(
+        `Based on ${schoolCount} schools, ${competitorCount} competitors, ${communityCount} community venues within ${location.trade_area_miles} mi (via ${dataSource})`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Auto-fill failed');
     } finally {
@@ -312,6 +380,13 @@ export default function ScoringPage() {
         <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
           <AlertCircle className="h-4 w-4 shrink-0" />
           {error}
+        </div>
+      )}
+
+      {autoFillSummary && !error && (
+        <div className="flex items-center gap-2 p-3 rounded-md bg-blue-50 text-blue-700 text-sm border border-blue-100">
+          <Zap className="h-4 w-4 shrink-0" />
+          {autoFillSummary}
         </div>
       )}
 
