@@ -210,7 +210,7 @@ export default function SavedPage() {
                       size="icon"
                       onClick={() => handleExport(analysis.id, 'excel')}
                       disabled={exportingId === `${analysis.id}-excel`}
-                      title="Download Excel (.xlsx)"
+                      title="Download analysis as Excel spreadsheet (.xlsx)"
                     >
                       <FileSpreadsheet className="h-4 w-4 text-green-700" />
                     </Button>
@@ -219,7 +219,7 @@ export default function SavedPage() {
                       size="icon"
                       onClick={() => handleExport(analysis.id, 'pdf')}
                       disabled={exportingId === `${analysis.id}-pdf`}
-                      title="Download PDF report"
+                      title="Download analysis as PDF report"
                     >
                       <FileText className="h-4 w-4 text-red-600" />
                     </Button>
@@ -228,7 +228,7 @@ export default function SavedPage() {
                       size="icon"
                       onClick={() => handleExport(analysis.id, 'pptx')}
                       disabled={exportingId === `${analysis.id}-pptx`}
-                      title="Download PowerPoint (.pptx)"
+                      title="Download analysis as PowerPoint presentation"
                     >
                       <Presentation className="h-4 w-4 text-orange-500" />
                     </Button>
@@ -237,7 +237,7 @@ export default function SavedPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleShare(analysis.id)}
-                      title="Copy share link"
+                      title="Generate a shareable link for this analysis (no login required)"
                     >
                       {copiedId === analysis.id ? (
                         <Check className="h-4 w-4 text-green-600" />
@@ -252,7 +252,7 @@ export default function SavedPage() {
                       onClick={() => handleDelete(analysis.id)}
                       disabled={deletingId === analysis.id}
                       className="text-destructive hover:text-destructive"
-                      title="Delete analysis"
+                      title="Permanently delete this saved analysis"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

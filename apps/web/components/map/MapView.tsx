@@ -52,6 +52,15 @@ const POI_LABELS: Record<string, string> = {
   museum: 'Museums',
 };
 
+const POI_TOOLTIPS: Record<string, string> = {
+  school: 'Show schools from Google Places within the trade area',
+  library: 'Show public libraries from Google Places within the trade area',
+  community_center: 'Show community and recreation centers within the trade area',
+  grocery: 'Show grocery stores and supermarkets within the trade area',
+  art_gallery: 'Show art galleries within the trade area',
+  museum: 'Show museums within the trade area',
+};
+
 type POICategory = 'school' | 'library' | 'community_center' | 'grocery' | 'art_gallery' | 'museum';
 const POI_CATEGORIES: POICategory[] = ['school', 'library', 'community_center', 'grocery', 'art_gallery', 'museum'];
 
@@ -741,12 +750,12 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
 
         {/* Core layers */}
         {[
-          { key: 'lkaLocations' as const, label: 'LKA Locations' },
-          { key: 'territories' as const, label: 'Territory Radii' },
-          { key: 'tradeArea' as const, label: 'Trade Area Ring' },
-          { key: 'isochrones' as const, label: isochroneLoading ? 'Drive Times (loading...)' : 'Drive Times' },
-        ].map(({ key, label }) => (
-          <label key={key} className="flex items-center gap-2 cursor-pointer">
+          { key: 'lkaLocations' as const, label: 'LKA Locations', tooltip: 'Show existing LKA franchise locations on the map' },
+          { key: 'territories' as const, label: 'Territory Radii', tooltip: 'Show the exclusive territory radius around each LKA location' },
+          { key: 'tradeArea' as const, label: 'Trade Area Ring', tooltip: 'Show a circular trade area around your selected point' },
+          { key: 'isochrones' as const, label: isochroneLoading ? 'Drive Times (loading...)' : 'Drive Times', tooltip: 'Show 10/15/20 minute drive time isochrones (requires ORS API key)' },
+        ].map(({ key, label, tooltip }) => (
+          <label key={key} className="flex items-center gap-2 cursor-pointer" title={tooltip}>
             <input
               type="checkbox"
               checked={layers[key]}
@@ -761,7 +770,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
         ))}
 
         {/* Trade area radius slider — always visible (Feature 4) */}
-        <div className="pl-2 space-y-1 pt-1">
+        <div className="pl-2 space-y-1 pt-1" title="Adjust the trade area radius for demographics and POI search (1-25 miles)">
           <p className="text-xs text-muted-foreground">
             Trade Area: <span className="font-medium text-foreground">{radiusSlider} mi</span>
           </p>
@@ -774,6 +783,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
             onChange={(e) => handleRadiusSliderChange(Number(e.target.value))}
             className="w-full accent-primary h-1"
             style={{ width: '140px' }}
+            title="Adjust the trade area radius for demographics and POI search (1-25 miles)"
           />
         </div>
 
@@ -783,10 +793,10 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
             Boundaries {boundaryLoading ? '(loading...)' : ''}
           </p>
           {[
-            { key: 'cityBoundary' as const, label: 'City Boundary', color: '#7c3aed' },
-            { key: 'countyBoundary' as const, label: 'County Boundary', color: '#0891b2' },
-          ].map(({ key, label, color }) => (
-            <label key={key} className="flex items-center gap-2 cursor-pointer mb-1">
+            { key: 'cityBoundary' as const, label: 'City Boundary', color: '#7c3aed', tooltip: 'When enabled, clicking the map selects the entire city/town — demographics aggregate at city level instead of radius' },
+            { key: 'countyBoundary' as const, label: 'County Boundary', color: '#0891b2', tooltip: 'Show the county boundary containing your selected point' },
+          ].map(({ key, label, color, tooltip }) => (
+            <label key={key} className="flex items-center gap-2 cursor-pointer mb-1" title={tooltip}>
               <input
                 type="checkbox"
                 checked={layers[key]}
@@ -808,7 +818,7 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
             POIs {totalPoiCount > 0 ? `(${totalPoiCount})` : ''}
           </p>
           {POI_CATEGORIES.map((cat) => (
-            <label key={cat} className="flex items-center gap-2 cursor-pointer mb-1">
+            <label key={cat} className="flex items-center gap-2 cursor-pointer mb-1" title={POI_TOOLTIPS[cat]}>
               <input
                 type="checkbox"
                 checked={layers[cat]}

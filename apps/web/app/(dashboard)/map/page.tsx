@@ -50,8 +50,9 @@ export default function MapPage() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               className="flex-1"
+              title="Search for a city, address, or location to analyze"
             />
-            <Button type="submit" size="icon" variant="outline">
+            <Button type="submit" size="icon" variant="outline" title="Search for a city, address, or location to analyze">
               <Search className="h-4 w-4" />
             </Button>
           </form>
@@ -66,6 +67,7 @@ export default function MapPage() {
                 size="sm"
                 onClick={() => router.push('/demographics')}
                 className="flex items-center gap-1.5"
+                title="Navigate to demographics dashboard for the selected location"
               >
                 Analyze
                 <ArrowRight className="h-3.5 w-3.5" />

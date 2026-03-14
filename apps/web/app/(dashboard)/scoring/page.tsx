@@ -321,7 +321,7 @@ export default function ScoringPage() {
             onClick={handleAutoFill}
             disabled={autoFilling}
             className="flex items-center gap-2"
-            title="Auto-fill from POI data and demographics"
+            title="Automatically populate scoring factors using Google Places data for the selected location"
           >
             <Zap className={`h-4 w-4 ${autoFilling ? 'animate-pulse' : ''}`} />
             {autoFilling ? 'Loading...' : 'Auto-fill'}
@@ -407,6 +407,7 @@ export default function ScoringPage() {
                 min="0"
                 value={inputs.target_households_count}
                 onChange={(e) => updateInput('target_households_count', e.target.value)}
+                title="Number of households in the trade area earning above the income threshold — higher is better for franchise viability (benchmark: 0–8,000)"
               />
               <p className="text-xs text-muted-foreground">Benchmark: 0–8,000</p>
             </div>
@@ -419,6 +420,7 @@ export default function ScoringPage() {
                 max="100"
                 value={inputs.competitor_score}
                 onChange={(e) => updateInput('competitor_score', e.target.value)}
+                title="Competitive landscape score: 100 = no competitors, decreases by 15 for each nearby Montessori/Kumon/tutoring competitor found"
               />
               {nearbyPOIs.filter((p) => p.type === 'competitor').length > 0 && (
                 <p className="text-xs text-blue-600">
@@ -434,6 +436,7 @@ export default function ScoringPage() {
                 min="0"
                 value={inputs.school_quality_score}
                 onChange={(e) => updateInput('school_quality_score', e.target.value)}
+                title="Composite school quality score based on nearby schools: Montessori = 3 pts, Private/Preschool = 2 pts, Public = 1 pt (benchmark: 0–50)"
               />
               <p className="text-xs text-muted-foreground">
                 Montessori = 3pts, Private/Preschool = 2pts, Public = 1pt. Benchmark: 0–50
@@ -452,6 +455,7 @@ export default function ScoringPage() {
                 step="0.1"
                 value={inputs.population_growth_pct}
                 onChange={(e) => updateInput('population_growth_pct', e.target.value)}
+                title="5-year population growth rate from Census data — positive growth indicates an expanding market (benchmark: -5% to +10%)"
               />
               <p className="text-xs text-muted-foreground">Benchmark: -5% to +10%</p>
             </div>
@@ -463,6 +467,7 @@ export default function ScoringPage() {
                 min="0"
                 value={inputs.community_poi_count}
                 onChange={(e) => updateInput('community_poi_count', e.target.value)}
+                title="Number of community venues (libraries, community centers, art galleries, museums) within the trade area — indicates community engagement (benchmark: 0–30)"
               />
               <p className="text-xs text-muted-foreground">Libraries, community centers, parks. Benchmark: 0–30</p>
               {nearbyPOIs.filter((p) => p.type === 'community').length > 0 && (
@@ -472,7 +477,7 @@ export default function ScoringPage() {
               )}
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3" title="When unchecked, the final eligibility score is capped at 60 regardless of other factors — check only if suitable commercial retail space is available nearby">
               <input
                 type="checkbox"
                 id="re-ok"

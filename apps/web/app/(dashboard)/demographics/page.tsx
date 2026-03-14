@@ -245,6 +245,7 @@ export default function DemographicsPage() {
           onClick={() => { fetchDemographics(); fetchPOIs(); fetchBoundaries(); }}
           disabled={loading}
           className="flex items-center gap-2"
+          title="Re-fetch demographics data from the Census API"
         >
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           Refresh
@@ -269,16 +270,17 @@ export default function DemographicsPage() {
           <CardContent className="space-y-3">
             <div className="flex gap-2 flex-wrap">
               {([
-                { value: 'place' as DemoLevel, label: 'City / Town' },
-                { value: 'radius' as DemoLevel, label: 'Trade Area Radius' },
-                { value: 'tract' as DemoLevel, label: 'Census Tract' },
-              ] as { value: DemoLevel; label: string }[]).map(({ value, label }) => (
+                { value: 'place' as DemoLevel, label: 'City / Town', tooltip: 'Aggregate demographics for the entire city or town containing your selected point' },
+                { value: 'radius' as DemoLevel, label: 'Trade Area Radius', tooltip: 'Aggregate demographics across all census tracts within the specified radius' },
+                { value: 'tract' as DemoLevel, label: 'Census Tract', tooltip: 'Show demographics for the single census tract directly under your selected point (most granular, can be misleading)' },
+              ] as { value: DemoLevel; label: string; tooltip: string }[]).map(({ value, label, tooltip }) => (
                 <Button
                   key={value}
                   variant={demoLevel === value ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => handleLevelChange(value)}
                   disabled={loading}
+                  title={tooltip}
                 >
                   {label}
                 </Button>
@@ -326,6 +328,7 @@ export default function DemographicsPage() {
                 value={tradeAreaInput}
                 onChange={(e) => setTradeAreaInput(e.target.value)}
                 className="w-32"
+                title="Radius in miles for trade area analysis — affects demographic aggregation and POI search"
               />
             </div>
             <div className="space-y-1.5">
@@ -338,9 +341,10 @@ export default function DemographicsPage() {
                 value={incomeInput}
                 onChange={(e) => setIncomeInput(e.target.value)}
                 className="w-40"
+                title="Minimum household income threshold — used to calculate what percentage of households are above this level"
               />
             </div>
-            <Button onClick={handleApplySettings} disabled={loading}>
+            <Button onClick={handleApplySettings} disabled={loading} title="Refresh demographics with updated settings">
               Apply
             </Button>
           </div>
@@ -374,7 +378,7 @@ export default function DemographicsPage() {
         <>
           {/* Core metrics */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <Card>
+            <Card title="Median annual household income from US Census ACS 5-year estimates">
               <CardHeader className="pb-2">
                 <CardDescription>Median Household Income</CardDescription>
                 <CardTitle className="text-3xl">
@@ -392,7 +396,7 @@ export default function DemographicsPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card title="Number and percentage of households earning above your income threshold">
               <CardHeader className="pb-2">
                 <CardDescription>Households Above Threshold</CardDescription>
                 <CardTitle className="text-3xl">
@@ -406,7 +410,7 @@ export default function DemographicsPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card title="Total population within the selected geography">
               <CardHeader className="pb-2">
                 <CardDescription>Total Population</CardDescription>
                 <CardTitle className="text-3xl">{formatNumber(data.population)}</CardTitle>
@@ -419,7 +423,7 @@ export default function DemographicsPage() {
             </Card>
 
             {/* Children 3-17 card */}
-            <Card className="border-blue-100">
+            <Card className="border-blue-100" title="Children in the LKA target age range (3-17 years) — key metric for franchise viability">
               <CardHeader className="pb-2">
                 <CardDescription className="flex items-center gap-1.5">
                   <Users className="h-3.5 w-3.5 text-blue-500" />
@@ -444,7 +448,7 @@ export default function DemographicsPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card title="Percentage of households with at least one child under 18">
               <CardHeader className="pb-2">
                 <CardDescription>Households w/ Children</CardDescription>
                 <CardTitle className="text-3xl">
@@ -456,7 +460,7 @@ export default function DemographicsPage() {
               </CardContent>
             </Card>
 
-            <Card>
+            <Card title="Percentage of adults with a bachelor's degree or higher">
               <CardHeader className="pb-2">
                 <CardDescription>College Educated</CardDescription>
                 <CardTitle className="text-3xl">
