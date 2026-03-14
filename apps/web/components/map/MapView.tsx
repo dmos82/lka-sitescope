@@ -5,6 +5,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useAuth } from '@/hooks/useAuth';
 import { apiFetch } from '@/lib/api-client';
+import { useLocation } from '@/hooks/useLocation';
 
 interface LkaLocationData {
   id: string;
@@ -147,6 +148,7 @@ interface LayerState {
 
 export default function MapView({ searchQuery, onLocationSelect }: MapViewProps) {
   const { token } = useAuth();
+  const { updateTradeArea: updateLocationTradeArea, updateCityName } = useLocation();
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const marker = useRef<maplibregl.Marker | null>(null);
@@ -173,6 +175,8 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
   const [selectedMarkerPos, setSelectedMarkerPos] = useState<{ lat: number; lng: number } | null>(null);
   const [poiData, setPoiData] = useState<Partial<Record<POICategory, PlaceItem[]>>>({});
   const tradeAreaMilesRef = useRef(5);
+  const [radiusSlider, setRadiusSlider] = useState(5);
+  const fetchBoundariesRef = useRef<((lat: number, lng: number) => void) | null>(null);
 
   // Fetch LKA locations
   useEffect(() => {
@@ -362,6 +366,8 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       placeMarker(lat, lng);
       setSelectedMarkerPos({ lat, lng });
       onLocationSelect?.(lat, lng, `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+      // Auto-fetch boundaries on click so city name is always detected
+      fetchBoundariesRef.current?.(lat, lng);
     });
 
     return () => {
@@ -377,16 +383,26 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
       .setLngLat([lng, lat])
       .addTo(map.current);
     map.current.flyTo({ center: [lng, lat], zoom: 12, duration: 1000 });
-    updateTradeArea(lng, lat, tradeAreaMilesRef.current);
+    updateMapTradeArea(lng, lat, tradeAreaMilesRef.current);
   }
 
-  function updateTradeArea(lng: number, lat: number, radiusMiles: number) {
+  function updateMapTradeArea(lng: number, lat: number, radiusMiles: number) {
     if (!map.current || !map.current.getSource('trade-area')) return;
     const circle = createTradeAreaCircle(lng, lat, radiusMiles);
     (map.current.getSource('trade-area') as maplibregl.GeoJSONSource).setData({
       type: 'FeatureCollection',
       features: [circle],
     });
+  }
+
+  function handleRadiusSliderChange(miles: number) {
+    tradeAreaMilesRef.current = miles;
+    setRadiusSlider(miles);
+    if (selectedMarkerPos) {
+      updateMapTradeArea(selectedMarkerPos.lng, selectedMarkerPos.lat, miles);
+    }
+    // Sync to location context so demographics page picks up the change
+    updateLocationTradeArea(miles);
   }
 
   // ── Fetch boundaries when location selected ────────────────────────────────
@@ -409,12 +425,22 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
         const features = result.county ? [result.county] : [];
         countySource.setData({ type: 'FeatureCollection', features } as Parameters<typeof countySource.setData>[0]);
       }
+
+      // Propagate city name to location context
+      if (result.place?.properties.name) {
+        updateCityName(result.place.properties.name);
+      }
     } catch (err) {
       console.error('[MapView] Boundary fetch error:', err);
     } finally {
       setBoundaryLoading(false);
     }
-  }, [token]);
+  }, [token, updateCityName]);
+
+  // Keep ref in sync with latest callback so map click handler can call it
+  useEffect(() => {
+    fetchBoundariesRef.current = fetchBoundaries;
+  }, [fetchBoundaries]);
 
   // ── Fetch POIs for a category ──────────────────────────────────────────────
 
@@ -580,6 +606,8 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
           placeMarker(latNum, lngNum);
           setSelectedMarkerPos({ lat: latNum, lng: lngNum });
           onLocationSelect?.(latNum, lngNum, display_name);
+          // Auto-fetch boundaries on search so city name is always detected
+          fetchBoundariesRef.current?.(latNum, lngNum);
         }
       })
       .catch(console.error);
@@ -665,6 +693,25 @@ export default function MapView({ searchQuery, onLocationSelect }: MapViewProps)
             </span>
           </label>
         ))}
+
+        {/* Trade area radius slider */}
+        {layers.tradeArea && (
+          <div className="pl-5 space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Radius: <span className="font-medium text-foreground">{radiusSlider} mi</span>
+            </p>
+            <input
+              type="range"
+              min={1}
+              max={25}
+              step={1}
+              value={radiusSlider}
+              onChange={(e) => handleRadiusSliderChange(Number(e.target.value))}
+              className="w-full accent-primary h-1"
+              style={{ width: '140px' }}
+            />
+          </div>
+        )}
 
         {/* Boundary layers */}
         <div className="pt-1.5 mt-1 border-t">

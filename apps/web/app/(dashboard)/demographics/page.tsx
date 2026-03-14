@@ -13,6 +13,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { apiFetch } from '@/lib/api-client';
 import type { DemographicResult } from '@lka/shared';
 
+type DemoLevel = 'place' | 'radius' | 'tract';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PlaceItem {
@@ -80,23 +82,31 @@ export default function DemographicsPage() {
   const [error, setError] = useState<string | null>(null);
   const [tradeAreaInput, setTradeAreaInput] = useState('5');
   const [incomeInput, setIncomeInput] = useState('125000');
+  const [demoLevel, setDemoLevel] = useState<DemoLevel>('place');
+  const [radiusMiles, setRadiusMiles] = useState(5);
 
   const [poiData, setPoiData] = useState<PlacesResponse | null>(null);
   const [poiLoading, setPoiLoading] = useState(false);
 
   const [boundaryData, setBoundaryData] = useState<BoundaryResult | null>(null);
 
-  const fetchDemographics = useCallback(async () => {
+  const fetchDemographics = useCallback(async (overrideLevel?: DemoLevel, overrideRadius?: number) => {
     if (!location || !token) return;
     setLoading(true);
     setError(null);
     try {
+      const level = overrideLevel ?? demoLevel;
+      const radius = overrideRadius ?? radiusMiles;
       const params = new URLSearchParams({
         lat: location.lat.toString(),
         lng: location.lng.toString(),
         trade_area_miles: location.trade_area_miles.toString(),
         income_threshold: location.income_threshold.toString(),
+        level,
       });
+      if (level === 'radius') {
+        params.set('radius_miles', radius.toString());
+      }
       const result = await apiFetch<DemographicResult>(`/api/demographics?${params}`, { token });
       setData(result);
     } catch (err) {
@@ -104,7 +114,7 @@ export default function DemographicsPage() {
     } finally {
       setLoading(false);
     }
-  }, [location, token]);
+  }, [location, token, demoLevel, radiusMiles]);
 
   const fetchPOIs = useCallback(async () => {
     if (!location || !token) return;
@@ -161,6 +171,20 @@ export default function DemographicsPage() {
     fetchPOIs();
   }
 
+  function handleLevelChange(level: DemoLevel) {
+    setDemoLevel(level);
+    setData(null);
+    fetchDemographics(level, radiusMiles);
+  }
+
+  function handleRadiusChange(miles: number) {
+    setRadiusMiles(miles);
+    if (demoLevel === 'radius') {
+      setData(null);
+      fetchDemographics('radius', miles);
+    }
+  }
+
   const currency = location?.country === 'CA' ? 'CAD' : 'USD';
 
   if (!location) {
@@ -179,6 +203,22 @@ export default function DemographicsPage() {
     );
   }
 
+  // Compute the active level label for display
+  const activeLevelLabel = (() => {
+    if (demoLevel === 'place') {
+      const placeName = data?.place_name ?? boundaryData?.place?.properties.name ?? location?.city_name;
+      return placeName ? `Showing demographics for ${placeName}` : 'Showing city/town demographics';
+    }
+    if (demoLevel === 'radius') {
+      const cityCtx = location?.city_name;
+      return cityCtx
+        ? `Showing demographics within ${radiusMiles} mi of ${cityCtx}`
+        : `Showing demographics within ${radiusMiles} mi radius`;
+    }
+    if (demoLevel === 'tract' && data?.tract_geoid) return `Showing demographics for Census Tract ${data.tract_geoid}`;
+    return 'Showing census tract demographics';
+  })();
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -189,17 +229,8 @@ export default function DemographicsPage() {
             <MapPin className="h-3.5 w-3.5" />
             <span className="truncate max-w-[400px]">{location.address}</span>
             <Badge variant="outline" className="text-xs">{location.country}</Badge>
-            {boundaryData?.place?.properties.name && (
-              <Badge variant="secondary" className="text-xs">
-                {boundaryData.place.properties.name}
-              </Badge>
-            )}
-            {boundaryData?.county?.properties.name && (
-              <Badge variant="outline" className="text-xs text-muted-foreground">
-                {boundaryData.county.properties.name}
-              </Badge>
-            )}
           </p>
+          <p className="text-sm text-muted-foreground mt-0.5">{activeLevelLabel}</p>
         </div>
         <Button
           variant="outline"
@@ -211,6 +242,56 @@ export default function DemographicsPage() {
           Refresh
         </Button>
       </div>
+
+      {/* Level selector (US only) */}
+      {location.country === 'US' && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Geography Level</CardTitle>
+            <CardDescription>Choose the area to aggregate demographics over</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex gap-2 flex-wrap">
+              {([
+                { value: 'place' as DemoLevel, label: 'City / Town' },
+                { value: 'radius' as DemoLevel, label: 'Trade Area Radius' },
+                { value: 'tract' as DemoLevel, label: 'Census Tract' },
+              ] as { value: DemoLevel; label: string }[]).map(({ value, label }) => (
+                <Button
+                  key={value}
+                  variant={demoLevel === value ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleLevelChange(value)}
+                  disabled={loading}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+            {demoLevel === 'radius' && (
+              <div className="space-y-1.5">
+                <Label htmlFor="radius-slider">
+                  Radius: <span className="font-semibold">{radiusMiles} miles</span>
+                </Label>
+                <input
+                  id="radius-slider"
+                  type="range"
+                  min={1}
+                  max={25}
+                  step={1}
+                  value={radiusMiles}
+                  onChange={(e) => handleRadiusChange(Number(e.target.value))}
+                  className="w-full accent-primary"
+                />
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>1 mi</span>
+                  <span>25 mi</span>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Settings */}
       <Card>

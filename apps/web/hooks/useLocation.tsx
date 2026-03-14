@@ -6,6 +6,8 @@ export interface SelectedLocation {
   lat: number;
   lng: number;
   address: string;
+  /** Detected city/town name (from boundary lookup or geocoder) */
+  city_name?: string;
   trade_area_miles: number;
   income_threshold: number;
   country: 'US' | 'CA';
@@ -16,6 +18,7 @@ interface LocationContextValue {
   setLocation: (loc: SelectedLocation | null) => void;
   updateTradeArea: (miles: number) => void;
   updateIncomeThreshold: (threshold: number) => void;
+  updateCityName: (name: string) => void;
 }
 
 const LocationContext = createContext<LocationContextValue | null>(null);
@@ -35,8 +38,12 @@ export function LocationProvider({ children }: { children: React.ReactNode }) {
     setLocationState((prev) => (prev ? { ...prev, income_threshold: threshold } : null));
   }
 
+  function updateCityName(name: string) {
+    setLocationState((prev) => (prev ? { ...prev, city_name: name } : null));
+  }
+
   return (
-    <LocationContext.Provider value={{ location, setLocation, updateTradeArea, updateIncomeThreshold }}>
+    <LocationContext.Provider value={{ location, setLocation, updateTradeArea, updateIncomeThreshold, updateCityName }}>
       {children}
     </LocationContext.Provider>
   );
