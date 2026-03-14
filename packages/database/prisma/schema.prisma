@@ -1,0 +1,106 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+model User {
+  id                  String         @id @default(uuid())
+  email               String         @unique
+  password_hash       String
+  name                String
+  role                String         @default("viewer") // admin, analyst, viewer
+  active_session_ids  String[]       @default([])
+  is_active           Boolean        @default(true)
+  created_at          DateTime       @default(now())
+  updated_at          DateTime       @updatedAt
+  saved_analyses      SavedAnalysis[]
+  audit_logs          AuditLog[]
+  lka_locations_created LkaLocation[] @relation("CreatedBy")
+
+  @@map("users")
+}
+
+model LkaLocation {
+  id                    String    @id @default(uuid())
+  name                  String
+  address               String
+  lat                   Float
+  lng                   Float
+  country               String    @default("US") // US, CA
+  status                String    @default("OPEN") // OPEN, COMING_SOON, CLOSED
+  opening_date          DateTime?
+  territory_radius_miles Float    @default(15)
+  created_by_id         String
+  created_by            User      @relation("CreatedBy", fields: [created_by_id], references: [id])
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+  // geom column managed via raw SQL migration (PostGIS POINT)
+
+  @@map("lka_locations")
+}
+
+model SavedAnalysis {
+  id                    String    @id @default(uuid())
+  user_id               String
+  user                  User      @relation(fields: [user_id], references: [id])
+  address               String
+  lat                   Float
+  lng                   Float
+  country               String    @default("US")
+  score                 Float?
+  letter_grade          String?
+  score_breakdown       Json?
+  demographics_snapshot Json?
+  income_threshold      Float     @default(75000)
+  trade_area_miles      Float     @default(5)
+  map_screenshot_url    String?
+  share_token           String?   @unique @default(uuid())
+  created_at            DateTime  @default(now())
+  updated_at            DateTime  @updatedAt
+  partners              Partner[]
+
+  @@map("saved_analyses")
+}
+
+model Partner {
+  id              String        @id @default(uuid())
+  analysis_id     String
+  analysis        SavedAnalysis @relation(fields: [analysis_id], references: [id], onDelete: Cascade)
+  name            String
+  category        String        // school, grocery, community, library, cultural
+  sub_type        String?       // Montessori, organic market, etc.
+  address         String?
+  lat             Float?
+  lng             Float?
+  phone           String?
+  distance_miles  Float?
+  relevance_score Float?
+  status          String        @default("not_contacted") // not_contacted, contacted, interested, partnered, declined
+  notes           String?
+  source          String?
+  created_at      DateTime      @default(now())
+  updated_at      DateTime      @updatedAt
+
+  @@map("partners")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  user_id    String
+  user       User     @relation(fields: [user_id], references: [id])
+  action     String
+  entity     String?
+  entity_id  String?
+  ip_address String?
+  user_agent String?
+  meta       Json?
+  created_at DateTime @default(now())
+
+  @@map("audit_logs")
+}

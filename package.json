@@ -1,0 +1,26 @@
+{
+  "name": "lka-sitescope",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel run dev",
+    "dev:web": "pnpm --filter @lka/web dev",
+    "dev:api": "pnpm --filter @lka/api dev",
+    "build": "pnpm -r run build",
+    "db:generate": "pnpm --filter @lka/database db:generate",
+    "db:migrate": "pnpm --filter @lka/database db:migrate",
+    "db:seed": "pnpm --filter @lka/database db:seed",
+    "pipeline:foursquare": "pnpm --filter @lka/pipeline pipeline:foursquare",
+    "pipeline:schools": "pnpm --filter @lka/pipeline pipeline:schools",
+    "pipeline:all": "pnpm --filter @lka/pipeline pipeline:all",
+    "lint": "pnpm -r run lint",
+    "test": "pnpm -r run test"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  }
+}
