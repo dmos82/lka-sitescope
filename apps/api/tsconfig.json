@@ -3,14 +3,13 @@
   "compilerOptions": {
     "module": "CommonJS",
     "moduleResolution": "Node",
+    "rootDir": "./src",
     "outDir": "./dist",
     "declaration": false,
     "declarationMap": false,
-    "paths": {
-      "@lka/shared": ["../../packages/shared/src/index.ts"],
-      "@lka/database": ["../../packages/database/src/index.ts"]
-    }
+    "sourceMap": false,
+    "paths": {}
   },
-  "include": ["src/**/*", "../../packages/shared/src/**/*", "../../packages/database/src/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
