@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { prisma } from '@lka/database';
 import { updatePartnerSchema } from '@lka/shared';
-import { protect, asyncHandler, AuthRequest } from '../middleware/protect';
+import { protect, requireRole, asyncHandler, AuthRequest } from '../middleware/protect';
 
 const router = Router();
 
@@ -35,10 +35,11 @@ router.get(
   })
 );
 
-// PATCH /api/partners/:id
+// PATCH /api/partners/:id (analyst or admin)
 router.patch(
   '/:id',
   protect,
+  requireRole('analyst', 'admin'),
   asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
     const parsed = updatePartnerSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -66,7 +67,7 @@ router.patch(
   })
 );
 
-// GET /api/partners/export?analysis_id=xxx
+// GET /api/partners/export?analysis_id=xxx[&limit=500&offset=0]
 router.get(
   '/export',
   protect,
@@ -77,6 +78,9 @@ router.get(
       return;
     }
 
+    const limit = Math.min(parseInt((req.query.limit as string) ?? '500', 10), 5000);
+    const offset = parseInt((req.query.offset as string) ?? '0', 10);
+
     const analysis = await prisma.savedAnalysis.findFirst({
       where: { id: analysis_id, user_id: req.user!.sub },
     });
@@ -85,10 +89,15 @@ router.get(
       return;
     }
 
-    const partners = await prisma.partner.findMany({
-      where: { analysis_id },
-      orderBy: [{ category: 'asc' }, { name: 'asc' }],
-    });
+    const [partners, total] = await Promise.all([
+      prisma.partner.findMany({
+        where: { analysis_id },
+        orderBy: [{ category: 'asc' }, { name: 'asc' }],
+        take: limit,
+        skip: offset,
+      }),
+      prisma.partner.count({ where: { analysis_id } }),
+    ]);
 
     type PartnerRow = typeof partners[number];
     const rows = [
@@ -109,6 +118,9 @@ router.get(
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="partners-${analysis_id}.csv"`);
+    res.setHeader('X-Total-Count', String(total));
+    res.setHeader('X-Offset', String(offset));
+    res.setHeader('X-Limit', String(limit));
     res.send(rows);
   })
 );

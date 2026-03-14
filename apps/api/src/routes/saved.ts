@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '@lka/database';
 import { saveAnalysisSchema } from '@lka/shared';
-import { protect, asyncHandler, AuthRequest } from '../middleware/protect';
+import { protect, requireRole, asyncHandler, AuthRequest } from '../middleware/protect';
+import { auditLog } from '../lib/audit';
 
 const router = Router();
 
@@ -23,10 +24,11 @@ router.get(
   })
 );
 
-// POST /api/saved — save a new analysis
+// POST /api/saved — save a new analysis (analyst or admin)
 router.post(
   '/',
   protect,
+  requireRole('analyst', 'admin'),
   asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
     const parsed = saveAnalysisSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -38,6 +40,7 @@ router.post(
       data: { ...parsed.data, user_id: req.user!.sub },
     });
 
+    auditLog({ userId: req.user!.sub, action: 'ANALYSIS_CREATE', entity: 'SavedAnalysis', entityId: analysis.id, meta: { address: analysis.address }, req });
     res.status(201).json(analysis);
   })
 );
@@ -61,10 +64,11 @@ router.get(
   })
 );
 
-// DELETE /api/saved/:id
+// DELETE /api/saved/:id (analyst or admin)
 router.delete(
   '/:id',
   protect,
+  requireRole('analyst', 'admin'),
   asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
     const analysis = await prisma.savedAnalysis.findFirst({
       where: { id: req.params.id, user_id: req.user!.sub },
@@ -76,6 +80,7 @@ router.delete(
     }
 
     await prisma.savedAnalysis.delete({ where: { id: req.params.id } });
+    auditLog({ userId: req.user!.sub, action: 'ANALYSIS_DELETE', entity: 'SavedAnalysis', entityId: req.params.id, req });
     res.json({ success: true });
   })
 );
@@ -97,6 +102,38 @@ router.get(
 
     const shareUrl = `${process.env.FRONTEND_URL}/shared/${analysis.share_token}`;
     res.json({ share_token: analysis.share_token, url: shareUrl });
+  })
+);
+
+// GET /api/saved/export — CSV export of all user analyses
+router.get(
+  '/export',
+  protect,
+  asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
+    const analyses = await prisma.savedAnalysis.findMany({
+      where: { user_id: req.user!.sub },
+      orderBy: { created_at: 'desc' },
+    });
+
+    type AnalysisRow = (typeof analyses)[number];
+    const rows = [
+      'Address,Country,Score,Grade,Trade Area (mi),Income Threshold,Created At',
+      ...analyses.map((a: AnalysisRow) =>
+        [
+          `"${a.address.replace(/"/g, '""')}"`,
+          a.country,
+          a.score ?? '',
+          a.letter_grade ?? '',
+          a.trade_area_miles,
+          a.income_threshold ?? '',
+          new Date(a.created_at).toISOString(),
+        ].join(',')
+      ),
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="saved-analyses.csv"');
+    res.send(rows);
   })
 );
 

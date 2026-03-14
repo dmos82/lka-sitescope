@@ -5,6 +5,7 @@
   "scripts": {
     "pipeline:foursquare": "ts-node src/foursquare.ts",
     "pipeline:schools": "ts-node src/schools.ts",
+    "pipeline:imls": "ts-node src/imls.ts",
     "pipeline:all": "ts-node src/index.ts",
     "build": "tsc",
     "lint": "eslint src --ext .ts"

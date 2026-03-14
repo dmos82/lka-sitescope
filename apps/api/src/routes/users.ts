@@ -3,6 +3,7 @@ import { hash } from 'bcryptjs';
 import { prisma } from '@lka/database';
 import { createUserSchema, updateUserSchema } from '@lka/shared';
 import { protect, requireRole, asyncHandler, AuthRequest } from '../middleware/protect';
+import { auditLog } from '../lib/audit';
 
 const router = Router();
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS ?? '10', 10);
@@ -49,6 +50,8 @@ router.post(
       select: { id: true, email: true, name: true, role: true, is_active: true, created_at: true },
     });
 
+    auditLog({ userId: req.user!.sub, action: 'USER_CREATE', entity: 'User', entityId: user.id, meta: { email, role }, req });
+
     res.status(201).json(user);
   })
 );
@@ -77,6 +80,8 @@ router.patch(
       select: { id: true, email: true, name: true, role: true, is_active: true, updated_at: true },
     });
 
+    auditLog({ userId: req.user!.sub, action: 'USER_UPDATE', entity: 'User', entityId: req.params.id, req });
+
     res.json(user);
   })
 );
@@ -91,6 +96,9 @@ router.delete(
       where: { id: req.params.id },
       data: { is_active: false, active_session_ids: [] },
     });
+
+    auditLog({ userId: req.user!.sub, action: 'USER_DELETE', entity: 'User', entityId: req.params.id, req });
+
     res.json({ success: true });
   })
 );

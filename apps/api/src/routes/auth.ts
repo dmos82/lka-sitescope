@@ -1,10 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { compare, hash } from 'bcryptjs';
+import { compare } from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { prisma } from '@lka/database';
 import { signAccessToken, signRefreshToken, verifyToken } from '../lib/jwt';
 import { loginSchema } from '@lka/shared';
 import { asyncHandler, AuthRequest } from '../middleware/protect';
+import { generateCsrfToken } from '../middleware/csrf';
+import { auditLog } from '../lib/audit';
 
 const router = Router();
 
@@ -47,9 +49,12 @@ router.post(
     res.cookie('refresh_token', refreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/auth',
     });
+
+    auditLog({ userId: user.id, action: 'LOGIN', entity: 'User', entityId: user.id, req });
 
     res.json({
       token: accessToken,
@@ -95,8 +100,9 @@ router.post(
     res.cookie('refresh_token', newRefreshToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: '/api/auth',
     });
 
     res.json({
@@ -127,14 +133,25 @@ router.post(
             },
           },
         });
+        // Audit the logout while we have the verified payload
+        auditLog({ userId: payload.sub, action: 'LOGOUT', entity: 'User', entityId: payload.sub, req });
       } catch {
         // Token already invalid — that's fine
       }
     }
 
-    res.clearCookie('refresh_token');
+    res.clearCookie('refresh_token', { path: '/api/auth' });
     res.json({ success: true });
   })
+);
+
+// GET /api/auth/csrf-token — returns a fresh CSRF token for the client
+router.get(
+  '/csrf-token',
+  (_req: Request, res: Response) => {
+    const token = generateCsrfToken();
+    res.json({ csrf_token: token });
+  }
 );
 
 export default router;

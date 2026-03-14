@@ -3,7 +3,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthProvider, useAuth } from '@/hooks/useAuth';
-import { Sidebar } from '@/components/layout/Sidebar';
+import { LocationProvider } from '@/hooks/useLocation';
+import { Sidebar, MobileNav } from '@/components/layout/Sidebar';
 
 function DashboardInner({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -26,10 +27,16 @@ function DashboardInner({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 overflow-auto">{children}</main>
-    </div>
+    <LocationProvider>
+      {/* Mobile: hamburger + drawer */}
+      <MobileNav />
+      <div className="flex h-screen overflow-hidden">
+        {/* Desktop: permanent sidebar */}
+        <Sidebar />
+        {/* Main content — on mobile add left padding for hamburger button */}
+        <main className="flex-1 overflow-auto md:pt-0 pt-14 flex flex-col">{children}</main>
+      </div>
+    </LocationProvider>
   );
 }
 

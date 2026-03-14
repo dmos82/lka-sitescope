@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { prisma } from '@lka/database';
 import { lkaLocationSchema } from '@lka/shared';
 import { protect, requireRole, asyncHandler, AuthRequest } from '../middleware/protect';
+import { auditLog } from '../lib/audit';
 
 const router = Router();
 
@@ -71,6 +72,7 @@ router.post(
     };
 
     const location = await prisma.lkaLocation.create({ data });
+    auditLog({ userId: req.user!.sub, action: 'LKA_LOCATION_CREATE', entity: 'LkaLocation', entityId: location.id, meta: { name: location.name }, req });
     res.status(201).json(location);
   })
 );
@@ -97,6 +99,7 @@ router.patch(
       data: updateData,
     });
 
+    auditLog({ userId: req.user!.sub, action: 'LKA_LOCATION_UPDATE', entity: 'LkaLocation', entityId: req.params.id, req });
     res.json(location);
   })
 );
@@ -108,6 +111,7 @@ router.delete(
   requireRole('admin'),
   asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
     await prisma.lkaLocation.delete({ where: { id: req.params.id } });
+    auditLog({ userId: req.user!.sub, action: 'LKA_LOCATION_DELETE', entity: 'LkaLocation', entityId: req.params.id, req });
     res.json({ success: true });
   })
 );

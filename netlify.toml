@@ -1,0 +1,10 @@
+[build]
+  command = "pnpm --filter @lka/shared build; pnpm --filter @lka/web build"
+  publish = "apps/web/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_PUBLIC_API_URL = ""
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

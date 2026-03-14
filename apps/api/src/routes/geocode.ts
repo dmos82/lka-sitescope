@@ -48,7 +48,7 @@ router.get(
     try {
       const nominatimRes = await fetch(url, {
         headers: {
-          'User-Agent': 'LKA-SiteScope/1.0 (contact@lka.com)',
+          'User-Agent': `LKA-SiteScope/1.0 (${process.env.NOMINATIM_CONTACT_EMAIL ?? 'contact@lkasitescope.com'})`,
           'Accept-Language': 'en',
         },
       });

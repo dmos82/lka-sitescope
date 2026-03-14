@@ -1,7 +1,7 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { calculateScore, detectCountry, COUNTRY_CONFIG } from '@lka/shared';
-import { protect, asyncHandler, AuthRequest } from '../middleware/protect';
+import { protect, requireRole, asyncHandler, AuthRequest } from '../middleware/protect';
 
 const router = Router();
 
@@ -26,6 +26,7 @@ const scoreBodySchema = z.object({
 router.post(
   '/',
   protect,
+  requireRole('admin', 'analyst'),
   asyncHandler(async (req: AuthRequest, res: Response): Promise<void> => {
     const parsed = scoreBodySchema.safeParse(req.body);
     if (!parsed.success) {

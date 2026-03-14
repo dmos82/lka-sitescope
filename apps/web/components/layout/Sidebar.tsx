@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
 import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import {
   Map,
   BarChart2,
@@ -15,18 +16,23 @@ import {
   BookOpen,
   LogOut,
   ChevronRight,
+  Shield,
+  GitCompare,
+  Menu,
+  X,
 } from 'lucide-react';
 
-const navItems = [
+const mainNavItems = [
   { href: '/map', icon: Map, label: 'Map View' },
   { href: '/demographics', icon: BarChart2, label: 'Demographics' },
   { href: '/scoring', icon: Star, label: 'Scoring' },
+  { href: '/compare', icon: GitCompare, label: 'Compare Sites' },
   { href: '/partners', icon: Users, label: 'Partners' },
   { href: '/locations', icon: MapPin, label: 'LKA Locations' },
   { href: '/saved', icon: BookOpen, label: 'Saved Analyses' },
 ];
 
-export function Sidebar() {
+function NavContent({ onNavClick }: { onNavClick?: () => void }) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -37,7 +43,7 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="flex flex-col w-64 border-r bg-card h-screen sticky top-0">
+    <>
       {/* Logo */}
       <div className="p-6 border-b">
         <h1 className="text-lg font-bold text-primary">LKA SiteScope</h1>
@@ -46,12 +52,13 @@ export function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-        {navItems.map(({ href, icon: Icon, label }) => {
+        {mainNavItems.map(({ href, icon: Icon, label }) => {
           const active = pathname === href || pathname.startsWith(href + '/');
           return (
             <Link
               key={href}
               href={href}
+              onClick={onNavClick}
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                 active
@@ -65,6 +72,31 @@ export function Sidebar() {
             </Link>
           );
         })}
+
+        {/* Admin-only section */}
+        {user?.role === 'admin' && (
+          <>
+            <div className="pt-3 pb-1">
+              <p className="text-xs font-medium text-muted-foreground/60 px-3 uppercase tracking-wider">
+                Admin
+              </p>
+            </div>
+            <Link
+              href="/admin"
+              onClick={onNavClick}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                pathname === '/admin'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+              )}
+            >
+              <Shield className="h-4 w-4 shrink-0" />
+              Admin Panel
+              {pathname === '/admin' && <ChevronRight className="ml-auto h-4 w-4" />}
+            </Link>
+          </>
+        )}
       </nav>
 
       {/* User footer */}
@@ -79,6 +111,59 @@ export function Sidebar() {
           Sign out
         </Button>
       </div>
+    </>
+  );
+}
+
+/** Desktop: permanent sidebar */
+export function Sidebar() {
+  return (
+    <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen sticky top-0 shrink-0">
+      <NavContent />
     </aside>
+  );
+}
+
+/** Mobile: hamburger button + drawer */
+export function MobileNav() {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  // Close drawer on route change
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  return (
+    <>
+      {/* Hamburger button — only visible on mobile */}
+      <button
+        className="md:hidden fixed top-3 left-3 z-50 p-2 rounded-md bg-card border shadow-sm"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={open ? 'Close navigation' : 'Open navigation'}
+      >
+        {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+      </button>
+
+      {/* Backdrop */}
+      {open && (
+        <div
+          className="md:hidden fixed inset-0 z-40 bg-black/40"
+          onClick={() => setOpen(false)}
+          aria-hidden
+        />
+      )}
+
+      {/* Drawer */}
+      <aside
+        className={cn(
+          'md:hidden fixed top-0 left-0 z-50 h-full w-72 bg-card border-r flex flex-col',
+          'transform transition-transform duration-200',
+          open ? 'translate-x-0' : '-translate-x-full'
+        )}
+      >
+        <NavContent onNavClick={() => setOpen(false)} />
+      </aside>
+    </>
   );
 }

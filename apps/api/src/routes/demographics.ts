@@ -1,7 +1,9 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
 import { protect, asyncHandler, AuthRequest } from '../middleware/protect';
+import { detectCountry } from '@lka/shared';
 import { getDemographicsForLocation } from '../services/census';
+import { getCanadianDemographics } from '../services/statscan';
 
 const router = Router();
 
@@ -25,12 +27,21 @@ router.get(
 
     const { lat, lng, income_threshold } = parsed.data;
 
-    const result = await getDemographicsForLocation(lat, lng, income_threshold);
+    const country = detectCountry(lat, lng);
+
+    let result;
+    if (country === 'CA') {
+      result = await getCanadianDemographics(lat, lng, income_threshold);
+    } else {
+      result = await getDemographicsForLocation(lat, lng, income_threshold);
+    }
 
     if (!result) {
       res.status(404).json({
         error: 'No census data found for this location',
-        hint: 'Location may be outside US coverage',
+        hint: country === 'CA'
+          ? 'Location may be in an area without StatsCan coverage'
+          : 'Location may be outside US coverage',
       });
       return;
     }
