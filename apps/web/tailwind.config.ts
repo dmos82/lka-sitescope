@@ -49,6 +49,10 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        /* LKA brand tokens — use directly in className */
+        'lka-charcoal': '#414042',
+        'lka-green': '#4EB748',
+        'lka-light': '#F5F5F5',
       },
       borderRadius: {
         lg: 'var(--radius)',

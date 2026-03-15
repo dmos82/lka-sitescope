@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -45,13 +46,22 @@ function NavContent({ onNavClick }: { onNavClick?: () => void }) {
   return (
     <>
       {/* Logo */}
-      <div className="p-6 border-b">
-        <h1 className="text-lg font-bold text-primary">LKA SiteScope</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">Franchise Site Analysis</p>
+      <div className="p-5 border-b border-white/10">
+        <Image
+          src="/lka-logo.svg"
+          alt="Little Kitchen Academy"
+          width={160}
+          height={32}
+          className="brightness-0 invert"
+          priority
+        />
+        <p className="text-xs mt-2" style={{ color: 'var(--sidebar-muted)' }}>
+          Franchise Site Analysis
+        </p>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+      <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
         {mainNavItems.map(({ href, icon: Icon, label }) => {
           const active = pathname === href || pathname.startsWith(href + '/');
           return (
@@ -62,9 +72,25 @@ function NavContent({ onNavClick }: { onNavClick?: () => void }) {
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                 active
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  ? 'text-white'
+                  : 'text-white/70 hover:text-white'
               )}
+              style={
+                active
+                  ? { backgroundColor: 'var(--sidebar-active-bg)' }
+                  : undefined
+              }
+              onMouseEnter={(e) => {
+                if (!active) {
+                  (e.currentTarget as HTMLElement).style.backgroundColor =
+                    'var(--sidebar-hover-bg)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!active) {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                }
+              }}
             >
               <Icon className="h-4 w-4 shrink-0" />
               {label}
@@ -77,7 +103,7 @@ function NavContent({ onNavClick }: { onNavClick?: () => void }) {
         {user?.role === 'admin' && (
           <>
             <div className="pt-3 pb-1">
-              <p className="text-xs font-medium text-muted-foreground/60 px-3 uppercase tracking-wider">
+              <p className="text-xs font-medium px-3 uppercase tracking-wider" style={{ color: 'var(--sidebar-muted)' }}>
                 Admin
               </p>
             </div>
@@ -87,9 +113,25 @@ function NavContent({ onNavClick }: { onNavClick?: () => void }) {
               className={cn(
                 'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
                 pathname === '/admin'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+                  ? 'text-white'
+                  : 'text-white/70 hover:text-white'
               )}
+              style={
+                pathname === '/admin'
+                  ? { backgroundColor: 'var(--sidebar-active-bg)' }
+                  : undefined
+              }
+              onMouseEnter={(e) => {
+                if (pathname !== '/admin') {
+                  (e.currentTarget as HTMLElement).style.backgroundColor =
+                    'var(--sidebar-hover-bg)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (pathname !== '/admin') {
+                  (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                }
+              }}
             >
               <Shield className="h-4 w-4 shrink-0" />
               Admin Panel
@@ -100,13 +142,22 @@ function NavContent({ onNavClick }: { onNavClick?: () => void }) {
       </nav>
 
       {/* User footer */}
-      <div className="p-4 border-t">
+      <div className="p-4 border-t border-white/10">
         <div className="mb-2">
-          <p className="text-sm font-medium truncate">{user?.name}</p>
-          <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-          <span className="text-xs capitalize text-muted-foreground">{user?.role}</span>
+          <p className="text-sm font-medium text-white truncate">{user?.name}</p>
+          <p className="text-xs truncate" style={{ color: 'var(--sidebar-muted)' }}>
+            {user?.email}
+          </p>
+          <span className="text-xs capitalize" style={{ color: 'var(--sidebar-muted)' }}>
+            {user?.role}
+          </span>
         </div>
-        <Button variant="ghost" size="sm" className="w-full justify-start gap-2" onClick={handleLogout}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full justify-start gap-2 text-white/70 hover:text-white hover:bg-white/10"
+          onClick={handleLogout}
+        >
           <LogOut className="h-4 w-4" />
           Sign out
         </Button>
@@ -118,7 +169,10 @@ function NavContent({ onNavClick }: { onNavClick?: () => void }) {
 /** Desktop: permanent sidebar */
 export function Sidebar() {
   return (
-    <aside className="hidden md:flex flex-col w-64 border-r bg-card h-screen sticky top-0 shrink-0">
+    <aside
+      className="hidden md:flex flex-col w-64 h-screen sticky top-0 shrink-0"
+      style={{ backgroundColor: 'var(--sidebar-bg)', color: 'var(--sidebar-fg)' }}
+    >
       <NavContent />
     </aside>
   );
@@ -157,10 +211,11 @@ export function MobileNav() {
       {/* Drawer */}
       <aside
         className={cn(
-          'md:hidden fixed top-0 left-0 z-50 h-full w-72 bg-card border-r flex flex-col',
+          'md:hidden fixed top-0 left-0 z-50 h-full w-72 flex flex-col',
           'transform transition-transform duration-200',
           open ? 'translate-x-0' : '-translate-x-full'
         )}
+        style={{ backgroundColor: 'var(--sidebar-bg)', color: 'var(--sidebar-fg)' }}
       >
         <NavContent onNavClick={() => setOpen(false)} />
       </aside>
